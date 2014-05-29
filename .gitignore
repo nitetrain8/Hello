@@ -18,7 +18,7 @@ develop-eggs
 lib
 lib64
 **/__pycache__
-**/.idea/workspace.xml
+**/.idea
 
 # Installer logs
 pip-log.txt

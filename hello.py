@@ -11,7 +11,7 @@ __author__ = 'Nathan Starkweather'
 
 from socket import socket, timeout
 from time import time
-from xml.etree.ElementTree import parse
+from xml.etree.ElementTree import parse as xml_parse
 
 
 def reloadhello():
@@ -90,14 +90,20 @@ class HelloApp():
             ('val2', str(pwd))
         ]
 
-        login_msg = self._build_msg(args)
+        login_msg = self._build_call(args)
         req, headers, body = self.communicate(login_msg)
 
-        tree = parse(body)
+        tree = xml_parse(body)
 
         #: @type: xml.etree.ElementTree.Element
         root = tree.getroot()
         result = root.findtext('Result')
+
+        # Never use eval!
+        if result == "True":
+            return True
+        else:
+            return False
 
     def communicate(self, msg):
 
@@ -151,8 +157,21 @@ class HelloApp():
 
         return req, headers, body
 
-    def _build_msg(self, args):
+    def _build_call(self, args):
+        """
+        @param args: list of key, value tuples relevant for the call
+        @type args: list[(str, str)]
+        @return: byte string representing full HTTP message for a call
+        @rtype: bytes
 
+        Build the full HTTP message to be sent to the server. Returns
+        message encoded in ascii.
+
+        """
+
+        # Todo- pre-encode fragments instead of building string as unicode?
+
+        # Ensure that the timestamp is present.
         if args[-1][0] != "_":
             args.append(("_", self._get_time()))
 
@@ -160,11 +179,11 @@ class HelloApp():
 
         msg = "".join((
                     "GET ",  # method
-                    self.svcpth,
+                    self.svcpth,  # url to interface method
                     "?&",
-                    argstr,
+                    argstr,  # &key1=val1&key2=val2....
                     " ",
-                    self.proto,
+                    self.proto,  # HTTP:1/1 etc
                     "\r\n",
                     "\r\n".join(": ".join(item) for item in self.headers.items()),  # headers
                     "\r\n\r\n",  # first line break is the end of the final header
@@ -179,3 +198,14 @@ class HelloApp():
     def __del__(self, *_):
         self.fp.close()
         self.sock.close()
+
+    def getMainValues(self):
+
+        args = [
+            ('call', 'getMainValues'),
+            ('json', 'true')
+        ]
+
+        msg = self._build_call(args)
+        req, headers, body = self.communicate(msg)
+        print(body)

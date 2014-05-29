@@ -42,8 +42,158 @@ except ImportError:
     from hello.hello import HelloApp
 
 from socket import socket, gethostbyname, gethostname
+
+# These are necessary for setting up a dummy server implementation
 from queue import Queue
 from threading import Thread
+from select import select
+from os import kill
+from signal import signal, SIGINT
+
+
+TEST_HOST = "localhost"
+TEST_PORT = 12345
+TEST_TIMEOUT = 2
+
+
+class DummyServer():
+    def __init__(self, host=TEST_HOST, port=TEST_PORT, timeout=TEST_TIMEOUT):
+        sock = socket()
+        sock.settimeout(timeout)
+        sock.bind((host, port))
+        sock.listen(5)
+        self.sock = sock
+        self.fp = self.sock.makefile('rwb')
+
+        fileno = self.fp.fileno()
+
+        self.sock_fo = [None for _ in range(fileno + 1)]
+        self.fd_fo = [None for _ in range(fileno + 1)]  # map fileno <-> file object
+        self.fd_r = [bytearray() for _ in range(fileno + 1)]  # map fileno <-> read buffer
+        self.fd_w = [bytearray() for _ in range(fileno + 1)]  # map fileno <-> write buffer
+        self.sock_fo[fileno] = self.sock
+        self.fd_fo[fileno] = self.fp
+        self._maxfileno = fileno  # the maximum fd that will fit into the list without OOB error
+
+        # To be set to true on clean exit
+        self._clean_exit = False
+
+    def run(self):
+        """
+        Launch the server. The server runs in a separate thread.
+        """
+        sthread = Thread(None, self.mainloop)
+
+    def SIGINT_handler(self, sig, frame):
+        rv = self._cleanup()
+        if rv:
+            self._clean_exit = True
+        raise SystemExit()
+
+    def mainloop(self):
+
+        signal(SIGINT, self.SIGINT_handler)
+
+        server_fp = self.fp.fileno()
+        _select = select
+
+        while True:
+            sel_r = [fileno for fileno, buf in enumerate(self.fd_r) if buf is not None]
+            sel_w = [fileno for fileno, buf in enumerate(self.fd_w) if buf is not None]
+
+            rlist, wlist, xlist = _select(sel_r, sel_w, ())
+
+            for fileno in rlist:
+                fp = self.fd_fo[fileno]
+
+                if fp is server_fp:
+                    fileno = self.accept_connection()
+                    self.fd_w[fileno].extend(b"Thank you for connecting!\r\n")
+                    continue
+
+                msg = fp.read()
+                self.fd_r[fileno].extend(msg)
+
+            for fileno in wlist:
+
+                fp = self.fd_fo[fileno]
+                msg = self.fd_w[fileno]
+                fp.write(msg)
+                fp.flush()
+                self.fd_w[fileno].clear()
+
+
+
+    def accept_connection(self):
+        """
+        Accept incoming connection to the server. Open connection, make a buffered reader,
+        update fd lists as necessary.
+
+        """
+        con, addr = self.sock.accept()
+        fp = con.makefile('rwb')
+        fileno = fp.fileno()
+
+        # If the fileno is greater than the biggest index in the list, grow the list.
+        if fileno > self._maxfileno:
+            n = fileno - self._maxfileno + 1
+            self.fd_fo.extend(None for _ in range(n))
+            self.sock_fo.extend(None for _ in range(n))
+            self.fd_r.extend(None for _ in range(n))
+            self.fd_w.extend(None for _ in range(n))
+            self._maxfileno = fileno
+
+        self.fd_fo[fileno] = fp
+        self.sock_fo[fileno] = con
+
+        return fileno
+
+    def _cleanup(self):
+        """
+        @return:
+        @rtype:
+        """
+        errors = []
+
+        fd_fo = self.fd_fo
+
+        while fd_fo:
+            fp = fd_fo.pop()
+            if fp is not None:
+                try:
+                    fp.close()
+                except Exception as e:
+                    errors.append((fp, e))
+
+        sock_fo = self.sock_fo
+
+        while sock_fo:
+            sock = sock_fo.pop()
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception as e:
+                    errors.append((sock, e))
+
+        if errors:
+            print("%d Errors" % len(errors))
+            for fp, error in errors:
+                print("Error shutting down resource:", fp)
+                print(error)
+            return False
+        return True
+
+    def __del__(self):
+        self._cleanup()
+        if not self._clean_exit:
+            print("Warning, leaked resources:")
+            print(*(fp for fp in self.fd_fo if fp is not None), sep='\n')
+            print(*(sock for sock in self.sock_fo if sock is not None), sep="\n")
+        self._cleanup()
+
+
+
+
 
 
 # noinspection PyProtectedMember
@@ -57,14 +207,14 @@ class TestHello(unittest.TestCase):
 
         app = HelloApp()
 
-        args = (
+        args = [
             ("foo", "bar"),
             ("baz", "fizz"),
             ("buzz", "12"),
             ("_", "1")
-        )
+        ]
 
-        msg = app._build_msg(args).decode('utf-8')
+        msg = app._build_call(args).decode('utf-8')
 
         lines = msg.splitlines(False)
 
@@ -102,17 +252,19 @@ class TestHello(unittest.TestCase):
         con, addr = server.accept()
         confp = con.makefile('rwb')
 
-        args = (
+        args = [
             ("foo", "bar"),
             ("baz", "fizz"),
             ("buzz", "12"),
             ("_", "1")
-        )
+        ]
 
-        msg = app._build_msg(args)
+        msg = app._build_call(args)
         n = len(msg)
 
         queue = Queue()
+
+        # launch this server process in a separate thread to avoid deadlock
 
         def test_get_msg(fp, n, q):
             result = fp.read(n)
