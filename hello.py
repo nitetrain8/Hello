@@ -134,26 +134,36 @@ class HelloApp():
 
         readline()  # clear empty post-header line
 
-        # read the message body
-        while True:
-            line = readline().rstrip()
+        if 'chunked' in headers.get('Transfer-Encoding', ''):
 
-            if not line:
-                break
+            # read the message body
+            while True:
+                line = readline().rstrip()
 
-            nbytes = int(line, 16)
+                if not line:
+                    break
 
-            if nbytes == 0:
-                readline()  # clear the final line in the buffer
-                break
+                nbytes = int(line, 16)
 
+                if nbytes == 0:
+                    readline()  # clear the final line in the buffer
+                    break
+
+                chunk = read(nbytes)
+                msgbuf.extend(chunk)
+
+                # read terminating \r\n.
+                readline()
+
+        elif 'Content-Length' in headers:
+            nbytes = int(headers['Content-Length'])
             chunk = read(nbytes)
             msgbuf.extend(chunk)
 
-            # read terminating \r\n.
-            readline()
+        else:
+            pass
 
-        body = msgbuf.decode()
+        body = msgbuf.decode('utf-8')
 
         return req, headers, body
 
