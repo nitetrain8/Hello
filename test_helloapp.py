@@ -151,8 +151,8 @@ class DummyServer():
         """
 
         # unpack instance attributes for clarity (also LOAD_FAST vs GET_ATTR)
-        # with note that underlying state *WILL* be modified
-        # while the loop is running.
+        # these are mutable, so their state *WILL* be modified
+        # while the loop is running. by accessing via instance attr in other funcs
 
         server_sock = self.sock
         fd_sock = self.fd_sock

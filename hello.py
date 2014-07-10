@@ -8,10 +8,11 @@ Created in: PyCharm Community Edition
 """
 __author__ = 'Nathan Starkweather'
 
-
+import shutil
 from socket import socket, timeout
 from time import time
 from xml.etree.ElementTree import parse as xml_parse
+from io import BytesIO, StringIO
 
 
 def reloadhello():
@@ -26,7 +27,7 @@ def reloadhello():
 
 
 class HelloApp():
-    def __init__(self, host='71.189.82.196', port=83, proto='HTTP/1.1', svcpth='webservice/interface/',
+    def __init__(self, host='71.189.82.196', port=83, proto='HTTP/1.1', svcpth='/webservice/interface/',
                  headers=None, timeout=5):
         self.host = host
         self.port = port
@@ -77,6 +78,9 @@ class HelloApp():
                 return s
             except timeout:
                 pass
+            except:
+                print("Failed after %d attempts" % attempts)
+                raise
 
         raise timeout("Failed to connect to (%s, %d) after %d attempts" % (host, port, attempts))
 
@@ -113,8 +117,6 @@ class HelloApp():
         fp.write(msg)
         fp.flush()  # important!
 
-        req = ''
-        body = ''
         headers = {}
         msgbuf = bytearray()
 
@@ -131,8 +133,6 @@ class HelloApp():
 
             k, v = line.decode().split(": ", 1)
             headers[k] = v
-
-        readline()  # clear empty post-header line
 
         if 'chunked' in headers.get('Transfer-Encoding', ''):
 
@@ -161,11 +161,35 @@ class HelloApp():
             msgbuf.extend(chunk)
 
         else:
-            pass
+
+            # Hopefully this doesn't block....
+            while True:
+                line = readline().strip()
+                if not line:
+                    break
+                msgbuf.extend(line)
 
         body = msgbuf.decode('utf-8')
 
         return req, headers, body
+
+    def getUsers(self):
+
+        args = [
+            ('call', 'getUsers'),
+        ]
+        call = self._build_call(args)
+        result = self.communicate(call)
+        req, headers, body = result
+        try:
+            file = StringIO(body)
+            tree = xml_parse(file)
+            root = tree.getroot()
+            msg = root.find("Message")
+        except:
+            print(result)
+            raise
+        return msg.text
 
     def _build_call(self, args):
         """
@@ -219,3 +243,69 @@ class HelloApp():
         msg = self._build_call(args)
         req, headers, body = self.communicate(msg)
         print(body)
+
+    def getConfig(self):
+
+        args = [
+            ('call', 'getConfig')
+        ]
+
+        call = self._build_call(args)
+        req, headers, response = self.communicate(call)
+        file = StringIO(response)
+        tree = xml_parse(file)
+        root = tree.getroot()
+        msg = root.find('Message')
+        cluster = msg.find('Cluster')
+
+        types = {
+            'DBL': float,
+            'I32': int,
+            'U8': int,
+            'U16': int,
+            'EW': lambda x: x  # Identity function, see "EW" in if statement below
+        }
+
+        citer = cluster.iter('Cluster')
+        next(citer)  # cluster element
+        # next(citer)  # name ("System Variables")
+        # next(citer)  # Number of elements ("13")
+
+        bigdata = {}
+        for elem in citer:
+            cluster = elem.iter()
+
+            next(cluster)  # cluster element
+            category = next(cluster).tag
+            elements = int(next(cluster).tag)
+
+            data = {}
+
+            while True:
+                try:
+                    tag_type = next(cluster).tag  # type tag
+                except StopIteration:
+                    break
+
+                name = next(cluster).text
+
+                if tag_type == 'EW':
+                    choices = []
+                    while True:
+                        choice = next(cluster)
+                        if choice.tag == 'Val':
+                            val = choice.text
+                            break
+                        else:
+                            choices.append(choice.text)
+                    val = choices[int(val)]
+                else:
+                    val = next(cluster).text
+
+                    # Map tag type to python type. For "EW", handle logic
+                    # above and pass through identity function.
+                data[name] = types[tag_type](val)
+
+            bigdata[category] = data
+
+        return bigdata
