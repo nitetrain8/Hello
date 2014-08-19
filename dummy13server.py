@@ -38,10 +38,55 @@ def recv_restful1(fp):
     @return: bytearray
     @rtype: bytearray
     """
+    buf = bytearray()
+
+    _readline = fp.readline
+    def readline():
+        v = _readline()
+        if v:
+            print(v)
+        return v
+    fp.readline = readline
+
     call_line = fp.readline()
+    buf.extend(call_line)
 
+    chunked = False
+    clength = 0
+    keep_alive = False
 
+    while True:
+        line = fp.readline()
+        buf.extend(line)
+        if line == b'\r\n':
+            break
+        elif line.lower() == b'transfer-encoding: chunked\r\n':
+            chunked = True
+        elif b'content-length' in line.lower():
+            clength = line.split(b': ', 1)[1]
+            clength = int(clength, 10)
+            print("clength", clength)
+        elif b'keep-alive' in line.lower():
+            keep_alive = True
 
+    print(chunked)
+    if chunked:
+        print("parsing chunked", 74)
+        while True:
+            line = fp.readline()
+            print("line is:", line)
+            buf.extend(line)
+            size = int(line.strip(), 16)
+            if size == 0:
+                break
+            line = fp.read(size+2)
+            buf.extend(line)
+    elif clength:
+        buf.extend(fp.read(clength))
+
+    fp.readline = _readline
+
+    return keep_alive, buf
 
 
 def create_connection(host, port, timeout=3):
@@ -63,6 +108,8 @@ class DummyServer():
     Real_sock interacts with the back_sock.
     """
     def __init__(self, dummyhost, dummyport, realhost, realport):
+        print("Initializing dummy server between %s:%d and %s:%d." %
+              (dummyhost, dummyport, realhost, realport))
         self.dummyhost = dummyhost
         self.dummyport = dummyport
         self.realhost = realhost
@@ -73,34 +120,76 @@ class DummyServer():
         self.front_sock = None
 
     def run(self):
-
+        print("Creating Server Socket and beginning run.")
         running = True
+        self.server_sock = socket()
+        self.server_sock.bind((self.dummyhost, self.dummyport))
+        # self.server_sock.settimeout(30)
+        self.server_sock.listen(5)
+        print("Running, beginning forwarding.")
+        from select import select
+
+        socks = [self.server_sock]
+        sockmap = {self.server_sock: None}
+        bufmap = {self.server_sock: None}
         while running:
+            rlist, wlist, xlist = select(sockmap, sockmap, ())
+            for sock in rlist:
+                if sock is self.server_sock:
+                    con, addr = sock.accept()
+                    socks.append(con)
+                    print("Got connection:", addr)
+                    fw_sock = create_connection(self.realhost, self.realport)
+                    sockmap[con] = fw_sock
+                    sockmap[fw_sock] = con
+                    bufmap[con] = None
+                    bufmap[fw_sock] = None
+                    continue
 
-            self.server_sock = socket()
-            self.server_sock.bind(self.dummyhost, self.dummyport)
-            self.back_sock = create_connection(self.realhost, self.realport)
-            self.front_sock = self.server_sock.accept()
+                buf = sock.recv(4096)
+                bufmap[sockmap[sock]] = buf
 
-            running = self.begin_forwarding(self.front_sock, self.back_sock)
+            for sock in wlist:
+                # print(sock)
+                buf = bufmap[sock]
+                if buf:
+                    n = len(buf)
+                    print("Forwarding message: from %r" % sock)
+                    print(buf)
+                    sock.sendall(buf)
+                    if n == len(buf):
+                        bufmap[sock] = None
+                    else:
+                        bufmap[sock] = buf[n:]
+                        # print(bufmap[sock])
 
-            self.back_sock.close()
-            self.front_sock.close()
+            for sock in xlist:
+                print(sock)
+
 
     def begin_forwarding(self, from_sock, to_sock):
 
+        keep_alive = False
+        from_sock.settimeout(5)
         try:
             from_fp = from_sock.makefile('rb')
-            msg_buf, call = recv_restful1(from_fp)
-            call_line = msg_buf[:msg_buf.find(b'\r\n')]
-            call = call_line.split(b"?&call=", 1)[1].split(b"&", 1)[0]
-            if call == b'getMainValues':
-                rsp_buf = getDummyMainValues()
-            elif call == b'getAdvancedValues':
-                rsp_buf = getDummyAdvValues()
+            to_fp = to_sock.makefile('rb')
+            while True:
+                keep_alive, msg_buf = recv_restful1(from_fp)
+                # print("got from_fp")
+                to_sock.sendall(msg_buf)
+                keep_alive, rsp = recv_restful1(to_fp)
+                # print("got to_fp")
+                from_sock.sendall(rsp)
 
+                if not keep_alive:
+                    print("breaking connection...")
+                    break
+                else:
+                    print("maintaining connection...")
             return True
-        except:
+        except Exception as e:
+            raise
             return False
 
 
@@ -108,13 +197,18 @@ def main():
 
     from sys import argv
 
-    try:
-        dummyhost, dummyport, realhost, realport = argv[1:]
-        dummyport = int(dummyport)
-        realport = int(realport)
-    except:
-        print("Error\n", "Usage: python dummy13server.py <dummyhost> <dummyport> <realhost> <realport>", sep='')
-        raise SystemExit
+    # try:
+    #     dummyhost, dummyport, realhost, realport = argv[1:]
+    #     dummyport = int(dummyport)
+    #     realport = int(realport)
+    # except:
+    #     print("Error\n", "Usage: python dummy13server.py <dummyhost> <dummyport> <realhost> <realport>", sep='')
+    #     raise SystemExit
+
+    dummyhost = '192.168.1.5'
+    dummyport = 81
+    realhost = '192.168.1.6'
+    realport = 80
 
     server = DummyServer(dummyhost, dummyport, realhost, realport)
     server.run()
