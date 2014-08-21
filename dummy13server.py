@@ -83,6 +83,7 @@ def recv_restful1(fp):
             buf.extend(line)
     elif clength:
         buf.extend(fp.read(clength))
+        print(fp.read())
 
     fp.readline = _readline
 
