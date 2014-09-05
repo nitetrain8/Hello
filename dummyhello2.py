@@ -18,7 +18,7 @@ from io import BytesIO
 from collections import OrderedDict
 
 
-ipv4def = "192.168.1.6"
+ipv4def = "192.168.1.7"
 
 
 def call_hello(url):
@@ -75,7 +75,7 @@ class Hello():
                  ),
              ),
 
-            ("Main Gas", OrderedDict(
+            ("MainGas", OrderedDict(
                     (("pv", 0),
                     ("sp", 0),
                     ("man", 0),
@@ -85,7 +85,7 @@ class Hello():
                 ),
             ),
 
-            ("Secondary Heat", OrderedDict(
+            ("SecondaryHeat", OrderedDict(
                     (("pv", 0),
                     ("sp", 0),
                     ("man", 0),
@@ -154,7 +154,7 @@ class Hello():
             ("SH Setpoint A", 0))
         )
 
-        self.main_values.move_to_end("Secondary Heat")
+        self.main_values.move_to_end("SecondaryHeat")
         self.adv_values.move_to_end("SH Duty", False)
 
     def getMainValues(self):

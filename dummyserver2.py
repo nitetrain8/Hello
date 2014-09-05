@@ -11,8 +11,7 @@ __author__ = 'Nathan Starkweather'
 import socket
 from select import select
 
-
-
+true_rsp = '<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message>True</Message></Reply>'
 def recv_restful1(fp):
 
     """
@@ -61,13 +60,13 @@ def recv_restful1(fp):
         elif b'content-length' in line.lower():
             clength = line.split(b': ', 1)[1]
             clength = int(clength, 10)
-            print("clength", clength)
+            # print("clength", clength)
         elif b'keep-alive' in line.lower():
             keep_alive = True
 
     # print(chunked)
     if chunked:
-        print("parsing chunked")
+        # print("parsing chunked")
         while True:
             line = fp.readline()
             buf.extend(line)
@@ -112,11 +111,11 @@ class Dummy():
             dfp.sock = dsock
             self.rsock = rsock
             self.dsock = dsock
-            rsock.settimeout(3)
-            dsock.settimeout(3)
+            # rsock.settimeout(3)
+            # dsock.settimeout(3)
+            fps = (rfp, dfp)
             while True:
-                fps = (rfp, dfp)
-                rfps, wfps, xfps = select(fps, fps, (), 5)
+                rfps, wfps, xfps = select(fps, fps, ())
                 if not rfps and not wfps:
                     def closed(s): return getattr(s, '_closed', False)
                     print("Oh No!", closed(rsock), closed(dsock))
@@ -124,7 +123,7 @@ class Dummy():
                 for fp in rfps:
                     # print("reading from", fp)
                     try:
-                        print("reading")
+                        # print("reading")
                         keep_alive, buf = recv_restful1(fp)
                     except socket.timeout:
                         print(write_map[fp].sock.recv(4096))
@@ -137,28 +136,46 @@ class Dummy():
                     # print("writing to", fp)
                     buf = to_write[fp]
                     if buf:
-                        print("writing", len(buf), "bytes", end=' ')
+                        try:
+                            print(self.get_call(buf))
+                        except:
+                            pass
+                        # print("writing", len(buf), "bytes", end=' ')
                         fp.write(buf)
-                        print("flushing buffer", end=' ')
+                        # print("flushing buffer", end=' ')
                         fp.flush()
-                        print("clearing buffer", end=' ')
+                        # print("clearing buffer", end=' ')
                         buf.clear()  # mutates in place
-                        print("done writing")
+                        # print("done writing")
 
                 if xfps:
                     print(*(s for s in xfps))
+            dsock.close()
+            rsock.close()
+
+    def get_call(self, buf):
+        nl = buf.find(b'\r\n')
+        if -1 == nl:
+            return None
+        try:
+            getline = buf[:nl]
+            get = getline.split(b' ')[1]
+            call = get.split(b'=', 1)[1].split(b'&', 1)[0]
+        except:
+            call = None
+
+        return call
 
 
-
-
-if __name__ == '__main__':
+def main():
     daddr = ('', 12345)
     raddr = ('192.168.1.6', 80)
 
-    from threading import Thread
+    # from threading import Thread
     server = Dummy(daddr, raddr)
 
     def test():
+        from threading import Thread
         mthread = Thread(None, server.mainloop)
 
         def dummy():
@@ -173,7 +190,43 @@ if __name__ == '__main__':
         # othread.start()
 
         import pdb
+        # pdb.set_trace()
 
-        pdb.set_trace()
-    test()
+    # test()
+    import cProfile
+    import pstats
+    import os
+    print(os.getpid())
+    pfile = "C:\\Users\\PBS Biotech\\Documents\\Personal\\test files\\profile.stats"
+
+    def pfunc():
+        try:
+            server.mainloop()
+        except BaseException:
+            pass
+        finally:
+            print('finally')
+            server.server_sock.close()
+            server.rsock.close()
+            server.dsock.close()
+    cProfile.runctx("pfunc()", globals(), locals(), pfile)
+
+    sfile = "C:\\Users\\PBS Biotech\\Documents\\Personal\\test files\\profile.txt"
+    with open(sfile, 'w') as f:
+        stats = pstats.Stats(pfile, stream=f)
+        stats.sort_stats('time')
+        stats.print_stats()
+    import os
+    os.startfile(sfile)
+
     # server.mainloop()
+
+def main2():
+    dummyaddr = ('', 12345)
+    realaddr = ('192.168.1.6', 80)
+    Dummy(dummyaddr, realaddr).mainloop()
+
+
+if __name__ == '__main__':
+    # main()
+    main2()
