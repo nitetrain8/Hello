@@ -87,7 +87,7 @@ r = login()
 
 # In[55]:
 
-headers
+#headers
 
 
 # In[56]:
@@ -98,6 +98,8 @@ sps = 1, 2, 3, 4, 5, 10, 15, 20, 30, 40, 60, 80, 100
 # In[57]:
 
 from json import loads
+
+
 def testrpm(sps=sps, st=120):
     rpms = {}
     for sp in sps:
@@ -118,6 +120,7 @@ def testrpm(sps=sps, st=120):
         print("%d%% power <--> %s RPM\n" % (sp, rpm))
     print("Done.")
     return rpms
+
 
 def poll_mv(t, group, name, interval=1):
     _time = time  # LOAD_FAST v. LOAD_GLOBAL
@@ -141,8 +144,9 @@ def poll_mv(t, group, name, interval=1):
         
     return ave(vals)
 
+
 def ave(ob):
-    return sum(ob)/len(ob)
+    return sum(ob) / len(ob)
     
 
 
@@ -154,7 +158,8 @@ def ave(ob):
 
 # In[59]:
 
-def sort_rpms(rpms): return sorted(rpms.items(), key=lambda item: float(item[0]))
+def sort_rpms(rpms):
+    return sorted(rpms.items(), key=lambda item: float(item[0]))
 
 
 # In[69]:
@@ -162,6 +167,8 @@ def sort_rpms(rpms): return sorted(rpms.items(), key=lambda item: float(item[0])
 from officelib.xllib.xlcom import xlObjs, echo_on, echo_off
 echo_on()
 from officelib.xllib.xladdress import cellRangeStr
+
+
 def plot_rpms(rpms, volume, bookname=None, column=1):
     xl, wb, ws, cells = xlObjs(bookname)
     rng = cellRangeStr((3, column), (len(rpms)+2, column+1))
@@ -176,33 +183,40 @@ def plot_rpms(rpms, volume, bookname=None, column=1):
 
 
 # In[62]:
-
-sps = 2.0, 4.0, 6.0, 8.0, 10.0
-rpms = testrpm(sps, 240)
-sorted_rpms = sort_rpms(rpms)
-plot_rpms(sorted_rpms, 2, 'LowVolumeRPM.xlsx', 1)
-
-
-# In[67]:
-
-plot_rpms(sorted_rpms, 30, 'LowVolumeRPM.xlsx', 1)
+def main():
+    sps = 2.0, 4.0, 6.0, 8.0, 10.0
+    rpms = testrpm(sps, 240)
+    sorted_rpms = sort_rpms(rpms)
+    plot_rpms(sorted_rpms, 2, 'LowVolumeRPM.xlsx', 1)
 
 
-# In[68]:
+    # In[67]:
 
-rpms_25L = testrpm(sps[::-1], 240)
-sorted_25L = sort_rpms(rpms_25L)
-plot_rpms(sorted_25L, 25, 'LowVolumeRPM.xlsx', 4)
+    plot_rpms(sorted_rpms, 30, 'LowVolumeRPM.xlsx', 1)
 
 
-# In[71]:
+    # In[68]:
 
-rpms_20L = testrpm(sps[::-1], 240)
-sorted_20L = sort_rpms(rpms_20L)
-plot_rpms(sorted_20L, 20, 'LowVolumeRPM.xlsx', 7)
+    rpms_25L = testrpm(sps[::-1], 240)
+    sorted_25L = sort_rpms(rpms_25L)
+    plot_rpms(sorted_25L, 25, 'LowVolumeRPM.xlsx', 4)
 
 
-# In[ ]:
+    # In[71]:
+
+    rpms_20L = testrpm(sps[::-1], 240)
+    sorted_20L = sort_rpms(rpms_20L)
+    plot_rpms(sorted_20L, 20, 'LowVolumeRPM.xlsx', 7)
+
+
+    # In[ ]:
+
+def main2():
+    sps = 1, 2, 3, 4, 5, 8, 10, 15, 20, 25, 30, 35, 50, 60, 70, 80, 90
+    rpms = testrpm(sps)
+    sorted_rpms = sort_rpms(rpms)
+    plot_rpms(sorted_rpms, 2.5, None, 1)
+
 
 
 
