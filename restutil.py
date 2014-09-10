@@ -25,13 +25,13 @@ def parse_chunked_frominto(fp, buf):
     """
     while True:
         line = fp.readline()
-        buf.extend(line)
+        buf.append(line)
         size = int(line.strip(), 16)
         if size == 0:
-            buf.extend(fp.readline())
+            buf.append(fp.readline())
             break
         line = fp.read(size + 2)
-        buf.extend(line)
+        buf.append(line)
 
 
 def recv_restful(fp):
@@ -46,17 +46,17 @@ def recv_restful(fp):
     @return: bytearray
     @rtype: bytearray
     """
-    buf = bytearray()
+    buf = []
 
     call_line = fp.readline()
-    buf.extend(call_line)
+    buf.append(call_line)
 
     chunked = False
     clength = 0
     keep_alive = False
     while True:
         line = fp.readline()
-        buf.extend(line)
+        buf.append(line)
         if line == b'\r\n':
             break
         elif line.lower() == b'transfer-encoding: chunked\r\n':
@@ -78,9 +78,9 @@ def recv_restful(fp):
         chunk = fp.read(clength)
         if len(chunk) != clength:
             raise BadError("chunk != clength")
-        buf.extend(chunk)
+        buf.append(chunk)
         # print('parsed clength')
-    return buf
+    return b''.join(buf)
 
 
 def get_call(buf):

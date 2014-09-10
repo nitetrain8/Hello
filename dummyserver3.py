@@ -43,6 +43,8 @@ class Dummy():
             rsock.connect(self.real_addr)
             try:
                 self._forward(dsock, rsock)
+            except ConnectionAbortedError:
+                pass
             finally:
                 rsock.close()
                 dsock.close()
@@ -82,7 +84,7 @@ class Dummy():
                 print(tbuf)
                 i = tbuf.find(b'\r\n\r\n')
                 i += 4
-                del tbuf[i:]
+                tbuf = bytearray(tbuf[:i])
                 tbuf.extend(("%x\r\n" % (len(true_rsp))).encode('ascii'))
                 tbuf.extend(true_rsp)
                 tbuf.extend(b'\r\n0\r\n\r\n')
@@ -100,7 +102,7 @@ class Dummy():
 
         while True:
             # print("Selecting")
-            rlist, wlist, xlist = select(fps, fps, ())
+            rlist, wlist, xlist = select(fps, fps, (), 1)
             # if rlist and wlist:
             #     print("Selected")
             if xlist:
@@ -126,6 +128,11 @@ class Dummy():
             if self.dsock._closed:
                 print("dsock closed")
 
+
+def superdummy():
+    s = socket()
+    s.bind(('', 12345))
+    d, _ = s.accept()
 
 
 def main():
