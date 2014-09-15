@@ -28,6 +28,7 @@ def find_most_recent(guis):
     last_date = 0
     last_version = 1
     latest = None
+    others = []
     for g in guis:
         groups = parser(g).groups()
         date = groups[0]
@@ -42,6 +43,8 @@ def find_most_recent(guis):
         elif idate == last_date:
             if n is not None and n > last_version:
                 latest = g
+        else:
+            others.append(g)
 
     return last_version, latest
 

@@ -313,5 +313,5 @@ if __name__ == '__main__':
         else:
             print(elem, elem.text)
 
-    ipv4 = '192.168.1.6'
+    ipv4 = '192.168.1.12'
     Hello(ipv4).mainloop()
