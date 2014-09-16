@@ -380,6 +380,8 @@ class PIDTest():
     def __repr__(self):
         return "P:%.2f I:%.2f Passed: %r" % (self.p, self.i, self.passed)
 
+    __str__ = __repr__
+
     def chartplot(self, chart):
         from officelib.xllib.xlcom import CreateDataSeries
         CreateDataSeries(chart, self.xrng, self.yrng, repr(self))
@@ -391,23 +393,50 @@ class PIDTest():
         self.chartplot(chart)
         return chart
 
-    def plotpidtest(self, wb, col):
-        from officelib.xllib.xlcom import xlBook2
+    def plotpidtest(self, wb_name, ws_num=1, col=1):
 
-        xl, wb = xlBook2(wb)
-        ws = wb.Worksheets(2)
+        if self.x and self.y:
+            xld = [(x, y) for x, y in zip(self.x, self.y)]
+        elif self.data:
+            xld = self.data
+        else:
+            raise BadError("Can't plot- no data!")
+
+        from officelib.xllib.xlcom import xlBook2
+        from officelib.xllib.xladdress import cellRangeStr
+
+        xl, wb = xlBook2(wb_name)
+        ws = wb.Worksheets(ws_num)
         cells = ws.Cells
-        xld = [(x, y) for x, y in zip(self.x, self.y)]
+
+        # xrng and yrng not used in this function,
+        # but we have the info here to calculate them
+        # and preserve state
+        xrng = cellRangeStr(
+            (3, col),
+            (2 + len(xld), col)
+        )
+        xrng = "=%s!%s" % (ws.Name, xrng)
+
+        yrng = cellRangeStr(
+            (3, col + 1),
+            (2 + len(xld), col + 1)
+        )
+
+        yrng = "=%s!%s" % (ws.Name, yrng)
+
+        self.xrng = xrng
+        self.yrng = yrng
+
         cells(1, col).Value = "P:"
         cells(2, col).Value = "I:"
         cells(1, col + 1).Value = str(self.p)
         cells(2, col + 1).Value = str(self.i)
         cells(1, col + 2).Value = "Passed?"
         cells(2, col + 2).Value = ("No", "Yes")[self.passed]
+
         rng = cells.Range(cells(3, col), cells(len(xld) + 2, col + 1))
         rng.Value = xld
-
-    __str__ = __repr__
 
 
 class BadError(Exception):
