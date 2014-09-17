@@ -17,7 +17,11 @@ from xml.etree.ElementTree import XML as parse_xml
 from json import loads
 
 
-class HelloError(Exception):
+class BadError(Exception):
+    pass
+
+
+class HelloError(BadError):
     pass
 
 
@@ -104,5 +108,80 @@ class HelloApp():
     def getagpv(self):
         return self.gpmv()['agitation']['pv']
 
+    def getconfig(self):
+        url = self.urlbase + "call=getconfig"
+        return self.call_hello(url)
 
+
+def _parse_cluster(typ, cluster):
+    n = cluster[0]
+    name = cluster[1]
+    return name, _parse(cluster[2])
+
+
+def _parse_ew(typ, elem):
+    raise NotImplemented
+
+
+def _parse_number(typ, elem):
+    children = elem.getchildren()
+    name = children[0].text
+    val = children[1].text
+    val = _num_types[typ](val)
+    return name, val
+
+
+_num_types = {
+    'DBL': float,
+    'I32': int,
+    'U8': int,
+    'U16': int,
+}
+
+_xml_types = {
+    'DBL': _parse_number,
+    'I32': _parse_number,
+    'U8': _parse_number,
+    'U16': _parse_number,
+    'EW': _parse_ew,
+    'Cluster': _parse_cluster
+}
+
+
+def _parse(elem):
+
+    tag = elem.tag
+    text = elem.text
+    children = elem.getchildren()
+
+    if not children:
+        rv = text
+    else:
+        rv = {}
+        for e in children:
+            parser = _xml_types.get(e.tag, None)
+            if parser:
+                k, v = parser(e.tag, e)
+                rv[k] = v
+            else:
+                rv[e.tag] = _parse(e)
+
+    return rv
+
+
+def parse_XML(xml):
+    """
+    @param xml: xml
+    @type xml: str
+    @return: dict
+    @rtype: dict
+
+    Accessory function to parse xml and return python dict.
+    """
+    from xml.etree.ElementTree import XML
+
+    root = XML(xml)
+    tag = root.tag
+
+    return _parse(root)
 

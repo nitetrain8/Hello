@@ -83,20 +83,22 @@ def unique_newname(n, template):
 
 
 def backup_data(dropbox):
-    files = listdir(dropbox)
 
-    for f in files:
-        if f == "HELLO Tests Master Data.fmp12":
-            break
-    else:
+    files = listdir(dropbox)
+    master_data = "HELLO Tests Master Data.fmp12"
+
+    if master_data not in files:
         raise FileNotFoundError("Couldn't find HELLO Tests Master Data")
 
     today = date.today().strftime("%y%m%d")
+
+    # %%d escapes the format sequence so the next function
+    # can format it as %d.
     fpth = "HELLO Tests Data %s %%d.fmp12" % today
 
     target = unique_newname(1, '/archive/'.join((dropbox, fpth)))
 
-    make_backups('/'.join((dropbox, f)), target, None)
+    make_backups('/'.join((dropbox, master_data)), target, None)
 
 if __name__ == '__main__':
     dropbox = "C:/Users/PBS Biotech/New folder/Dropbox/HELLO Testing"

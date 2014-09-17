@@ -9,6 +9,7 @@ for dummy hello things.
 """
 __author__ = 'Nathan Starkweather'
 
+
 class BadError(Exception):
     """something bad happened"""
     pass
@@ -92,3 +93,5 @@ def get_call(buf):
         return getline.split(b'=', 1)[1].split(b'&', 1)[0]
     except:
         return None
+
+
