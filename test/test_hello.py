@@ -53,12 +53,13 @@ class TestXMLParse(unittest.TestCase):
     def test_xml_parse_getconfig(self):
         from hello.hello import HelloApp
 
-        app = HelloApp('192.168.1.12')
+        app = HelloApp('192.168.1.6')
         rsp = app.getconfig()
         xml = rsp.read()
 
         print(parse_XML(xml))
         print(xml)
+
 
 if __name__ == '__main__':
     unittest.main()

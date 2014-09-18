@@ -114,8 +114,8 @@ class HelloApp():
 
 
 def _parse_cluster(typ, cluster):
-    n = cluster[0]
-    name = cluster[1]
+    name = cluster[0].text
+    # name = cluster[1].text
     return name, _parse(cluster[2])
 
 
@@ -148,25 +148,16 @@ _xml_types = {
 }
 
 
-def _parse(elem):
+def _parse(elem, state):
 
-    tag = elem.tag
-    text = elem.text
     children = elem.getchildren()
-
     if not children:
-        rv = text
+        state[elem.tag] = elem.text
     else:
-        rv = {}
+        state[elem.tag] = {}
         for e in children:
-            parser = _xml_types.get(e.tag, None)
-            if parser:
-                k, v = parser(e.tag, e)
-                rv[k] = v
-            else:
-                rv[e.tag] = _parse(e)
+            _parse(e, state[elem.tag])
 
-    return rv
 
 
 def parse_XML(xml):
@@ -179,9 +170,11 @@ def parse_XML(xml):
     Accessory function to parse xml and return python dict.
     """
     from xml.etree.ElementTree import XML
-
     root = XML(xml)
     tag = root.tag
 
-    return _parse(root)
+    state = {}
+    _parse(root, state)
+    return state
+
 
