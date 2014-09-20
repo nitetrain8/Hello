@@ -15,18 +15,41 @@ from shutil import rmtree
 
 __author__ = 'PBS Biotech'
 
-curdir = dirname(__file__)
-test_dir = dirname(curdir)
-test_temp_dir = join(test_dir, "temp")
-temp_dir = join(test_temp_dir, "temp_dir_path")
-test_input = join(curdir, "test_input")
+test_dir = dirname(__file__)
+temp_dir = join(test_dir, "temp")
+test_input = join(test_dir, "test_input")
+
+getconfig_file = test_input + "/" + "GetConfig.xml"
+getconfig_xml = None
 
 
 def setUpModule():
-    try:
-        makedirs(temp_dir)
-    except FileExistsError:
-        pass
+    for d in (temp_dir, test_input):
+        try:
+            makedirs(d)
+        except FileExistsError:
+            pass
+
+    def make_xml():
+        from urllib.request import urlopen
+
+        url = "http://71.189.82.196:6/webservice/interface/?&call=getconfig"
+        rsp = urlopen(url)
+        xml = rsp.read()
+
+        # Cache result for future use.
+        with open(getconfig_file, 'wb') as f:
+            f.write(xml)
+
+        return xml
+
+    from os.path import exists
+    global getconfig_xml
+    if exists(getconfig_file):
+        with open(getconfig_file, 'rb') as f:
+            getconfig_xml = f.read()
+    else:
+        getconfig_xml = make_xml()
 
 
 def tearDownModule():
@@ -36,7 +59,7 @@ def tearDownModule():
         pass
 
 
-from hello.hello import parse_XML
+from hello.hello import ConfigXML, HelloXML
 
 
 class TestXMLParse(unittest.TestCase):
@@ -45,20 +68,30 @@ class TestXMLParse(unittest.TestCase):
         @return: None
         @rtype: None
         """
-        xml = "<myxml><foo>bar!</foo></myxml>"
-        rsp = parse_XML(xml)
+        xml = "<myxml><Result>True</Result><Message><foo>bar!</foo></Message></myxml>"
+        rsp = HelloXML(xml).getdata()
         exp = {"foo": "bar!"}
         self.assertEqual(exp, rsp)
 
+    @unittest.skip
     def test_xml_parse_getconfig(self):
         from hello.hello import HelloApp
 
-        app = HelloApp('192.168.1.6')
+        app = HelloApp('192.168.1.12')
         rsp = app.getconfig()
         xml = rsp.read()
 
-        print(parse_XML(xml))
+        print(ConfigXML(xml))
         print(xml)
+
+    def test_getconfig(self):
+
+        with open(getconfig_file, 'rb') as f:
+            xml = f.read()
+
+        p = ConfigXML(xml).getdata()
+
+        print(p['Agitation'])
 
 
 if __name__ == '__main__':

@@ -112,69 +112,103 @@ class HelloApp():
         url = self.urlbase + "call=getconfig"
         return self.call_hello(url)
 
+    def parseconfig(self, rsp):
+        # Rsp is the return from getconfig
+        cfg = ConfigXML(rsp.read())
+        return cfg
 
-def _parse_cluster(typ, cluster):
-    name = cluster[0].text
-    # name = cluster[1].text
-    return name, _parse(cluster[2])
-
-
-def _parse_ew(typ, elem):
-    raise NotImplemented
+    def gpcfg(self):
+        return self.parseconfig(self.getconfig())
 
 
-def _parse_number(typ, elem):
-    children = elem.getchildren()
-    name = children[0].text
-    val = children[1].text
-    val = _num_types[typ](val)
-    return name, val
+class HelloXML():
+
+    def __init__(self, xml):
+        root = parse_xml(xml)
+
+        self._parse_types = {
+            'DBL': self.parse_float,
+            'I32': self.parse_int,
+            'I16': self.parse_int,
+            'U16': self.parse_int,
+            'U8': self.parse_int,
+            'Cluster': self.parse_cluster
+        }
+
+        self._parsed = False
+        name, parsed = self.parse(root)
+        self.parse_dict = {name: parsed}
+        self.reply = parsed
+        self.result = parsed['Result']
+        self.data = parsed['Message']
+        self._parsed = True
+
+    def getdata(self):
+        if self._parsed:
+            return self.data
+        else:
+            raise BadError("No data!")
+
+    def getresult(self):
+        if self._parsed:
+            return self.data
+        else:
+            raise BadError("No result!")
+
+    def parse(self, e):
+        name = e.tag
+        children = list(e)
+        if not children:
+            return name, e.text
+        val = self.parse_children(children)
+        return name, val
+
+    def parse_children(self, elems):
+        """
+        @param elems: elements
+        @type elems: list[xml.etree.ElementTree.Element]
+        """
+        rv = {}
+        get_parser = self._parse_types.get
+        for c in elems:
+            ctag = c.tag
+            parser = get_parser(ctag)
+            if parser is None:
+                k, v = self.parse(c)
+            else:
+                k, v = parser(c)
+            rv[k] = v
+        return rv
+
+    def parse_int(self, e):
+        name = e[0].text
+        val = e[1].text
+        val = int(val)
+        return name, val
+
+    def parse_float(self, e):
+        name = e[0].text
+        val = e[1].text
+        val = float(val)
+        return name, val
+
+    def parse_cluster(self, e):
+        name = e[0].text
+        val = self.parse_children(e[2:])
+        return name, val
 
 
-_num_types = {
-    'DBL': float,
-    'I32': int,
-    'U8': int,
-    'U16': int,
-}
-
-_xml_types = {
-    'DBL': _parse_number,
-    'I32': _parse_number,
-    'U8': _parse_number,
-    'U16': _parse_number,
-    'EW': _parse_ew,
-    'Cluster': _parse_cluster
-}
-
-
-def _parse(elem, state):
-
-    children = elem.getchildren()
-    if not children:
-        state[elem.tag] = elem.text
-    else:
-        state[elem.tag] = {}
-        for e in children:
-            _parse(e, state[elem.tag])
-
-
-
-def parse_XML(xml):
+class ConfigXML(HelloXML):
+    """ getconfig sends back kind of a weird xml
+    so this is a quick override to return a more convenient
+    mapping.
     """
-    @param xml: xml
-    @type xml: str
-    @return: dict
-    @rtype: dict
-
-    Accessory function to parse xml and return python dict.
-    """
-    from xml.etree.ElementTree import XML
-    root = XML(xml)
-    tag = root.tag
-
-    state = {}
-    _parse(root, state)
-    return state
+    def getdata(self):
+        if self._parsed:
+            return self.data['System_Variables']
+        else:
+            raise BadError("Oh No, no Data!")
 
 
+if __name__ == '__main__':
+    print(HelloApp('192.168.1.6').gpcfg().data)
