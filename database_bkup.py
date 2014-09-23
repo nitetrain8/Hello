@@ -101,7 +101,9 @@ def backup_data(dropbox):
     make_backups('/'.join((dropbox, master_data)), target, None)
 
 if __name__ == '__main__':
-    dropbox = "C:/Users/PBS Biotech/New folder/Dropbox/HELLO Testing"
+    # dropbox = "C:/Users/PBS Biotech/New folder/Dropbox/HELLO Testing"
+    dropbox = "."
     backup_gui(dropbox)
     backup_data(dropbox)
+    input("Press Enter to close.")
 

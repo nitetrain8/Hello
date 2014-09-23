@@ -18,14 +18,25 @@ from json import loads
 
 
 class BadError(Exception):
+    """ Encompases all things bad. """
     pass
 
 
 class HelloError(BadError):
+    """ Problem with Hello app class. """
     pass
 
 
 class AuthError(HelloError):
+    """ Authentication Error. Most likely due to
+    failure to properly maintain state across multiple
+    server calls.
+    """
+    pass
+
+
+class XMLError(HelloError):
+    """ Problem with XML returned from a server call """
     pass
 
 
@@ -50,10 +61,10 @@ class HelloApp():
         @return: None
         @rtype: None
 
-        User is making sure they didn't screw up the ipv4
+        User responsible for making sure they didn't screw up the ipv4
         """
-        self.ipv4 = ipv4
         self.urlbase = self._url_template % ipv4
+        self.ipv4 = ipv4
 
     def call_hello(self, url):
 
@@ -200,14 +211,14 @@ class HelloXML():
 
 class ConfigXML(HelloXML):
     """ getconfig sends back kind of a weird xml
-    so this is a quick override to return a more convenient
-    mapping.
+    so this is a quick override of super's method to return
+    a more convenient mapping.
     """
     def getdata(self):
         if self._parsed:
             return self.data['System_Variables']
         else:
-            raise BadError("Oh No, no Data!")
+            raise XMLError("Oh No, no Data!")
 
 
 if __name__ == '__main__':

@@ -143,6 +143,7 @@ def testhighest2(sp, step, t=5, iters=3):
 def testhighest(start, step, t=5):
     sp = start
     setag(1, sp, True)
+    sp += step
     ag = pv = getagpv()
     while sp <= 100:
         setag(1, sp, True)
@@ -164,9 +165,14 @@ def poll_highest(sp, step, t):
 
         initsp = max(15, sp - 10)
         init_high_poll(15, initsp, 2, 2)
-        setag(1, sp)
+        # setag(1, sp)
         sleep(10)
         st -= 10
+
+        # this is kind of sloppy, but basically keep track of
+        # some pv value before we finish initializing the high
+        # poll value to act as a sentinel to compare against to
+        # determine whether the wheel stopped.
         warningpv = getagpv()
 
         if 0 == warningpv:
