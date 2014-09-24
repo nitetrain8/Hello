@@ -108,7 +108,10 @@ class HelloApp():
         return self.parsemv(self.getMainValues())['message']
 
     def setconfig(self, group, name, val):
-        name = name.replace("_", "__").replace(" ", "_")
+        if ':' in name:
+            name = name.replace(":", "")
+        if ' ' in name:
+            name = name.replace(" ", "_")
         url = self.urlbase + "call=setconfig&group=%s&name=%s&val=%s" \
                              % (group, name, str(val))
         rsp = self.call_hello(url)
@@ -130,6 +133,12 @@ class HelloApp():
 
     def gpcfg(self):
         return self.parseconfig(self.getconfig())
+
+    def __repr__(self):
+        base = super().__repr__()
+        return ' '.join((base, 'ipv4', self.ipv4))
+
+    __str__ = __repr__
 
 
 class HelloXML():

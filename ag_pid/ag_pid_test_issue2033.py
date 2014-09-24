@@ -2,6 +2,8 @@
 
 # In[1]:
 
+from hello.hello import HelloApp
+
 ipv4 = '192.168.1.12'
 
 
@@ -62,7 +64,8 @@ from xml.etree.ElementTree import XML as xml_parse
 
 
 class LoginError(Exception):
-    pass
+    def __init__(self, *args):
+        super().__init__(''.join(args))
 
 
 def login(user='user1', pwd='12345'):
@@ -344,6 +347,10 @@ def manypidtests(settings, sp, wb, col=1, settle_time=60, margin=1):
         col += 4
 
 
+class BadError(Exception):
+    pass
+
+
 class PIDTest():
     """ PID test container for tests run over
     9/12 - 9/14 weekend
@@ -358,8 +365,11 @@ class PIDTest():
         0: False
     }
 
-    def __init__(self, p, i, passed, xdata=None,
-                 ydata=None, xrng=None, yrng=None, data=None):
+    app = None
+
+    def __init__(self, p, i, passed=False, xdata=None,
+                 ydata=None, xrng=None, yrng=None, data=None,
+                 ipv4='192.168.1.6'):
 
         self.xrng = xrng
         self.yrng = yrng
@@ -369,6 +379,49 @@ class PIDTest():
         self.x = xdata
         self.y = ydata
         self.data = data
+
+        self.app = HelloApp(ipv4)
+
+    def runtest(self, p, i, sp, settle_time=60, margin=1, timeout=120):
+
+        app = self.app
+        pvs = []
+        _time = time
+        _sleep = sleep
+
+        settle_min = sp - margin
+        settle_max = sp + margin
+
+        app.login()
+        app.setconfig("Agitation", "P_Gain__(%25%2FRPM)", p)
+        app.login()
+        app.setconfig("Agitation", "I Time (min)", i)
+        app.setag(0, sp)
+        settle_end = _time() + settle_time
+
+        print("Beginning Polling...")
+        start = _time()
+        end = _time() + timeout
+        passed = True
+        while True:
+
+            pv = float(app.getagpv())
+            pvs.append((_time() - start, pv))
+
+            if not settle_min < pv < settle_max:
+                t = _time()
+                settle_end = t + settle_time
+                if t > end:
+                    passed = False
+                    break
+
+            elif _time() > settle_end:
+                break
+
+            _sleep(0.5)
+
+        self.passed = passed
+        self.data = pvs
 
     def parse_passed(self, passed):
         """
@@ -437,11 +490,6 @@ class PIDTest():
 
         rng = cells.Range(cells(3, col), cells(len(xld) + 2, col + 1))
         rng.Value = xld
-
-
-class BadError(Exception):
-    pass
-
 
 def parse_tests(wb_name):
     from officelib.xllib.xlcom import xlBook2
