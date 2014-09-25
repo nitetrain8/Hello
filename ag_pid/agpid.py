@@ -7,13 +7,13 @@ Created in: PyCharm Community Edition
 
 """
 from os.path import exists
-from hello.hello import HelloApp, BadError
+from hello.hello import HelloApp, BadError, AuthError
 from time import time, sleep
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2
 from traceback import format_exc
 from datetime import datetime
-# from io import StringIO
+from io import StringIO
 from officelib.xllib.xlcom import HiddenXl
 
 __author__ = 'Nathan Starkweather'
@@ -113,15 +113,15 @@ class PIDTest():
 
     __str__ = __repr__
 
-    def _chartplot(self, chart):
+    def chartplot(self, chart):
         from officelib.xllib.xlcom import CreateDataSeries
         CreateDataSeries(chart, self.xrng, self.yrng, repr(self))
 
-    def _createplot(self, ws):
+    def createplot(self, ws):
         from officelib.xllib.xlcom import CreateChart, PurgeSeriesCollection
         chart = CreateChart(ws)
         PurgeSeriesCollection(chart)
-        self._chartplot(chart)
+        self.chartplot(chart)
         return chart
 
     def _calc_xl_rngs(self, col, ws, xld):
@@ -215,7 +215,7 @@ class PIDRunner():
             self._combos.append(combo)
 
         self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d")
-        self._logbuf = []
+        self._logbuf = StringIO()
         self._tests = []
         self._closed = False
 
@@ -228,6 +228,8 @@ class PIDRunner():
             app = q
         else:
             app = HelloApp(q)
+
+        self._init_settings(app)
 
         for p, i, sp in self._combos:
             self._log("Running test P:%.2f I:%.2f SP: %.2f" % (p, i, sp))
@@ -249,24 +251,43 @@ class PIDRunner():
         self._log("Plotting All tests in ", self._wb_name or "New Workbook")
         with HiddenXl(self.xl):
             for t in self._tests:
-                self._log("\tPlotting:", repr(t))
+                self._log("\tCopying data:", repr(t), end=' ')
                 try:
                     t.plot(self.wb.Name, 1, i)
-                    i += 3
+                    i += 4
+                except:
+                    self._log_err("Error copying data")
+                else:
+                    self._log("Success!")
+
+            self._log("Done copying data. Plotting now..")
+
+            t = self._tests[0]
+            self._log("Creating Chart with:", repr(t))
+            try:
+                chart = t.createplot(self.wb.Worksheets(1))
+            except:
+                self._log_err("Error Creating Chart, aborting")
+                return
+
+            for t in self._tests[1:]:
+                self._log("Plotting data:", repr(t), end=' ')
+                try:
+                    t.chartplot(chart)
                 except:
                     self._log_err("Error plotting")
+                else:
+                    self._log("Success!")
 
-        self._log("Done plotting.")
-
-    def _log_err(self, *msg):
-        self._log(*msg)
+    def _log_err(self, *msg, **pkw):
+        self._log(*msg, **pkw)
         self._log(format_exc())
 
-    def _log(self, *args):
+    def _log(self, *args, **pkw):
         """ Log stuff. print to console, save a copy to
         internal log buffer. """
         line = ' '.join(args)
-        self._logbuf.append(line)
+        print(line, file=self._logbuf, **pkw)
         print(line)
 
     def _get_log_fname(self):
@@ -281,14 +302,18 @@ class PIDRunner():
 
     def _commit_log(self):
         fpth, mode = self._get_log_fname()
+
+        # just in case the log is really big, avoid derping
+        # the whole thing into memory at once.
         with open(fpth, mode) as f:
-            f.writelines(self._logbuf)
-        self._logbuf.clear()
+            self._logbuf.seek(0, 0)
+            for line in self._logbuf:
+                print(line, file=f)
+        self._logbuf = StringIO()
 
     def close(self):
         if self._closed:
             return
-
         self._closed = True
 
         if self._logbuf:
@@ -311,3 +336,23 @@ class PIDRunner():
 
     def __del__(self):
         self.close()
+
+    def _repr(self):
+        l1 = super().__repr__()
+
+    def _init_settings(self, app):
+        settings = (
+            ("Agitation", "Minimum (RPM)", 3),
+            ("Agitation", "Power Auto Max (%)", 100),
+            ("Agitation", "Power Auto Min (%)", 3.9),
+            ("Agitation", "Auto Max Startup (%)", 7),
+            ("Agitation", "Samples To Average", 3),
+            ("Agitation", "Min Mag Interval (s)", 0.1),
+            ("Agitation", "Max Change Rate (%/s)", 100),
+            ("Agitation", "PWM Period (us)", 1000),
+            ("Agitation", "PWM OnTime (us)", 1000)
+        )
+        # for setting in ("Minimum"):
+        #     try:
+        #         app.login()
+        #         app.setconfig()

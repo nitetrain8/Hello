@@ -10,6 +10,8 @@ from other modules/ipython sessions/etc.
 
 Maybe turn into __init__.py?
 """
+from urllib.parse import quote
+
 __author__ = 'Nathan Starkweather'
 
 from urllib.request import urlopen, Request
@@ -113,8 +115,9 @@ class HelloApp():
             name = name.replace(":", "")
         if ' ' in name:
             name = name.replace(" ", "_")
-        url = self.urlbase + "call=setconfig&group=%s&name=%s&val=%s" \
-                             % (group, name, str(val))
+
+        call = "call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
+        url = self.urlbase + quote(call)
         rsp = self.call_hello(url)
         txt = rsp.read().decode('utf-8')
         if not self.validate_set_rsp(txt):
