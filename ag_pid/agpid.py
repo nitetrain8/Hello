@@ -80,7 +80,6 @@ class PIDTest():
         app.setag(0, sp)
         settle_end = _time() + settle_time
 
-        print("Beginning Polling...")
         start = _time()
         end = start + timeout
         passed = True
@@ -230,6 +229,9 @@ class PIDRunner():
         self._ws = None
         self._chart = None
 
+    def copy(self):
+        return type(self)(othercombos=self._combos, wb_name=self._wb_name, app_or_ipv4=self._app_or_ipv4)
+
     def doall(self):
         self.runall()
         self.plotall()
@@ -245,8 +247,10 @@ class PIDRunner():
 
         self._init_settings(app)
 
-        for p, i, sp in self._combos:
-            self._log("Running test P:%.2f I:%.2f SP: %.2f" % (p, i, sp), end=' ')
+        ntests = len(self._combos)
+
+        for n, (p, i, sp) in enumerate(self._combos):
+            self._log("Running test %d of %d P:%.2f I:%.2f SP: %.2f" % (n, ntests, p, i, sp), end=' ')
             t = PIDTest(p, i, sp, app_or_ipv4=app)
             try:
                 t.run()
