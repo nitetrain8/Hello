@@ -333,8 +333,10 @@ class PIDRunner():
         self._log(format_exc())
 
     def _log(self, *args, **pkw):
-        """ Log stuff. print to console, save a copy to
-        internal log buffer. """
+        """
+        Log stuff. print to console, save a copy to
+        internal log buffer.
+        """
         line = ' '.join(args)
         now = _getnow().strftime("%m/%d/%Y %H:%M:%S")
         print(now, line, file=self._logbuf, **pkw)
@@ -366,8 +368,7 @@ class PIDRunner():
             return
         self._closed = True
 
-        if self._logbuf:
-            self._commit_log()
+        self._commit_log()
 
         if self._xl is not None:
             self._xl.Visible = True
@@ -383,6 +384,10 @@ class PIDRunner():
         while path_exists(fpth):
             fpth = tmplt % (' ' + str(n))
             n += 1
+
+        # debug
+        from pysrc.snippets import printdir
+        printdir(self, False)
 
         from pysrc.snippets.safe_write import safe_pickle
         safe_pickle(self, fpth)
