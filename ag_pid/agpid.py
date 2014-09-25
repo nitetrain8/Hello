@@ -6,7 +6,8 @@ Created in: PyCharm Community Edition
 
 
 """
-from os.path import exists
+from os.path import exists as path_exists, split as path_split
+from os import makedirs
 from hello.hello import HelloApp, BadError, AuthError
 from time import time, sleep
 from officelib.xllib.xladdress import cellRangeStr
@@ -14,9 +15,11 @@ from officelib.xllib.xlcom import xlBook2
 from traceback import format_exc
 from datetime import datetime
 from io import StringIO
-from officelib.xllib.xlcom import HiddenXl
 
 __author__ = 'Nathan Starkweather'
+
+
+_getnow = datetime.now
 
 
 class PIDTest():
@@ -65,7 +68,7 @@ class PIDTest():
         settle_max = sp + margin
 
         app.login()
-        app.setconfig("Agitation", "P_Gain__(%25%2FRPM)", self.p)
+        app.setconfig("Agitation", "P_Gain__(%/RPM)", self.p)
         app.login()
         app.setconfig("Agitation", "I_Time_(min)", self.i)
 
@@ -79,11 +82,11 @@ class PIDTest():
 
         print("Beginning Polling...")
         start = _time()
-        end = _time() + timeout
+        end = start + timeout
         passed = True
         while True:
 
-            pv = float(app.getagpv())
+            pv = app.getagpv()
             pvs.append((_time() - start, pv))
 
             if not settle_min < pv < settle_max:
@@ -140,15 +143,13 @@ class PIDTest():
         yrng = "=%s!%s" % (ws.Name, yrng)
         return xrng, yrng
 
-    def plot(self, wb_name, ws_num=1, col=1):
+    def plot(self, ws, col=1):
 
         if self.data:
             xld = self.data
         else:
             raise BadError("Can't plot- no data!")
 
-        xl, wb = xlBook2(wb_name)
-        ws = wb.Worksheets(ws_num)
         cells = ws.Cells
 
         xrng, yrng = self._calc_xl_rngs(col, ws, xld)
@@ -162,6 +163,8 @@ class PIDTest():
         cells(2, col + 1).Value = str(self.i)
         cells(1, col + 2).Value = "Passed?"
         cells(2, col + 2).Value = ("No", "Yes")[self.passed]
+        cells(1, col + 3).Value = "SP:"
+        cells(2, col + 3).Value = str(self.sp)
 
         rng = cells.Range(cells(3, col), cells(len(xld) + 2, col + 1))
         rng.Value = xld
@@ -173,7 +176,7 @@ class PIDRunner():
     @type _tests: list[PIDTest]
     """
 
-    _docroot = "C:/Users/Public/Documents/PBSSS/Agitation/Mag Wheel PID/.repllog/"
+    _docroot = "C:/Users/Public/Documents/PBSSS/Agitation/Mag Wheel PID/"
 
     def __init__(self, pgains=(), itimes=(), sps=(), othercombos=(),
                  wb_name=None, app_or_ipv4='192.168.1.6'):
@@ -214,21 +217,21 @@ class PIDRunner():
         for combo in othercombos:
             self._combos.append(combo)
 
-        self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d")
+        self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d%H%M")
         self._full_xl_name = self._docroot + self._wb_name
         self._logbuf = StringIO()
         self._tests = []
         self._closed = False
 
-        if exists(self._full_xl_name):
-            self._xl, self.wb = xlBook2(self._full_xl_name, False, False)
-        else:
-            self._xl, self.wb = xlBook2(None, False, False)
-            self.wb.SaveAs(self._wb_name, AddToMru=True)
+        self._xl = None
+        self._wb = None
+        self._ws = None
+        self._chart = None
 
     def doall(self):
         self.runall()
         self.plotall()
+        self.chartbypid()
 
     def runall(self):
 
@@ -255,38 +258,75 @@ class PIDRunner():
                 self._log("Successful test")
                 self._tests.append(t)
 
-    def plotall(self):
-        i = 1
-        self._log("Plotting All tests in ", self._wb_name or "New Workbook")
-        with HiddenXl(self._xl):
-            for t in self._tests:
-                self._log("\tCopying data:", repr(t), end=' ')
-                try:
-                    t.plot(self.wb.Name, 1, i)
-                    i += 4
-                except:
-                    self._log_err("Error copying data")
-                else:
-                    self._log("Success!")
+    def _init_xl(self):
+        if path_exists(self._full_xl_name):
+            self._log("Opening existing workbook")
+            xl, wb = xlBook2(self._full_xl_name, True, False)
+        else:
+            xl, wb = xlBook2(None, True, False)
+            wb.SaveAs(self._full_xl_name, AddToMru=True)
+        ws = self._wb.Worksheets(1)
 
-            self._log("Done copying data. Plotting now..")
+        return xl, wb, ws
 
-            t = self._tests[0]
-            self._log("Creating Chart with:", repr(t))
+    def chartall(self):
+
+        chart = self._init_chart()
+
+        for t in self._tests:
+            self._log("Plotting data:", repr(t), end=' ')
             try:
-                chart = t.createplot(self.wb.Worksheets(1))
+                t.chartplot(chart)
             except:
-                self._log_err("Error Creating Chart, aborting")
-                return
+                self._log_err("Error plotting")
+            else:
+                self._log("Success!")
 
-            for t in self._tests[1:]:
-                self._log("Plotting data:", repr(t), end=' ')
-                try:
-                    t.chartplot(chart)
-                except:
-                    self._log_err("Error plotting")
-                else:
-                    self._log("Success!")
+    def chartbypid(self, ifpassed=False):
+
+        groups = {}
+        for t in self._tests:
+
+            if ifpassed and not t.passed:
+               continue
+
+            key = (t.p, t.i)
+            if key not in groups:
+                groups[key] = self._init_chart()
+            t.chartplot(groups[key])
+
+        for key in groups:
+            p, i = key
+            name = "P:%sI:%s" % (str(p), str(i))
+            groups[key].Location(1, name)
+
+    def plotall(self):
+
+        self._log("Copying test data to ", self._wb_name or "New Workbook")
+
+        d = path_split(self._full_xl_name)[0]
+
+        try:
+            makedirs(d)
+        except FileExistsError:
+            pass
+
+        self._xl, self._wb, self._ws = self._init_xl()
+
+        ntests = len(self._tests)
+        col = 1
+
+        for n, t in enumerate(self._tests, 1):
+            self._log("\tCopying data for test %d of %d" % (n, ntests), repr(t), end=' ')
+            try:
+                t.plot(self._ws, col)
+                col += 5
+            except:
+                self._log_err("Error copying data")
+            else:
+                self._log("Success!")
+
+        self._log("Done copying data for %d tests." % ntests)
 
     def _log_err(self, *msg, **pkw):
         self._log(*msg, **pkw)
@@ -296,15 +336,16 @@ class PIDRunner():
         """ Log stuff. print to console, save a copy to
         internal log buffer. """
         line = ' '.join(args)
-        print(line, file=self._logbuf, **pkw)
-        print(line)
+        now = _getnow().strftime("%m/%d/%Y %H:%M:%S")
+        print(now, line, file=self._logbuf, **pkw)
+        print(now, line)
 
     def _get_log_name(self):
 
-        tmplt = self._docroot + "agpid_log %s%%s.log" % datetime.now().strftime("%y%m%d%H%M%S")
+        tmplt = self._docroot + "repllog/agpid_log %s%%s.log" % _getnow().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
-        while exists(fpth):
+        while path_exists(fpth):
             fpth = tmplt % (' ' + str(n))
             n += 1
         return fpth, 'w'
@@ -332,15 +373,18 @@ class PIDRunner():
             self._xl.Visible = True
             self._xl = None
 
+        self._wb = None
+        self._ws = None
+        self._chart = None
+
         tmplt = self._docroot + "agpid_bkup cache %s%%s.pickle" % datetime.now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
-        while exists(fpth):
+        while path_exists(fpth):
             fpth = tmplt % (' ' + str(n))
             n += 1
 
         from pysrc.snippets.safe_write import safe_pickle
-
         safe_pickle(self, fpth)
 
     def __del__(self):
@@ -361,15 +405,40 @@ class PIDRunner():
             ("Agitation", "PWM Period (us)", 1000),
             ("Agitation", "PWM OnTime (us)", 1000)
         )
-        for grp, setting, val in settings:
-            for _ in range(3):
-                try:
-                    app.login()
-                    app.setconfig(grp, setting, val)
-                except AuthError:
-                    pass
-                else:
-                    break
 
-            else:
-                raise AuthError("Failed to initialize Settings")
+        self._log("Initializing Settings")
+        for grp, setting, val in settings:
+            self._log("Setting %s %s to %s" % (grp, setting, str(val)))
+            app.login()
+            app.setconfig(grp, setting, val)
+        self._log("Initialization Successful")
+
+    def _init_chart(self):
+
+        from officelib.xllib.xlcom import CreateChart, PurgeSeriesCollection
+        self._log("Initializing chart")
+        chart = CreateChart(self._ws)
+        PurgeSeriesCollection(chart)
+        return chart
+
+    def chartbyfilter(self, **kw):
+        items = tuple(kw.items())
+
+        self._log("Charting by filter:", kw)
+
+        def fltr(ob):
+            for k, v in items:
+                if getattr(ob, k) != v:
+                    return False
+            return True
+
+        matches = tuple(filter(fltr, self._tests))
+
+        self._log("Plotting %d tests in new chart" % len(matches))
+
+        chart = self._init_chart()
+        for m in matches:
+            m.chartplot(chart)
+
+        chart_name = ''.join("%s=%s" % it for it in items)
+        chart.Location(1, chart_name)

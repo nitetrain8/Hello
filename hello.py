@@ -17,6 +17,7 @@ __author__ = 'Nathan Starkweather'
 from urllib.request import urlopen, Request
 from xml.etree.ElementTree import XML as parse_xml
 from json import loads
+from re import compile as re_compile
 
 
 class BadError(Exception):
@@ -40,6 +41,27 @@ class AuthError(HelloError):
 class XMLError(HelloError):
     """ Problem with XML returned from a server call """
     pass
+
+
+_sanitize = re_compile(r"([\s:%/])").sub
+
+_sanitize_map = {
+    ':': '',
+    ' ': '_',
+    '/': '%2F',
+    '%': '%25'
+}
+
+
+def _sanitize_cb(m):
+    """
+    @type m: _sre.SRE_Match
+    """
+    return _sanitize_map[m.group(0)]
+
+
+def sanitize_url(call):
+    return _sanitize(_sanitize_cb, call)
 
 
 class HelloApp():
@@ -117,14 +139,14 @@ class HelloApp():
             name = name.replace(" ", "_")
 
         call = "call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
-        url = self.urlbase + quote(call)
+        url = self.urlbase + sanitize_url(call)
         rsp = self.call_hello(url)
         txt = rsp.read().decode('utf-8')
         if not self.validate_set_rsp(txt):
             raise AuthError(txt)
 
     def getagpv(self):
-        return self.gpmv()['agitation']['pv']
+        return float(self.gpmv()['agitation']['pv'])
 
     def getagvals(self):
         mv = self.gpmv()
@@ -240,4 +262,22 @@ class ConfigXML(HelloXML):
 
 
 if __name__ == '__main__':
-    print(HelloApp('192.168.1.6').gpcfg().data)
+    settings = (
+        ("Agitation", "Minimum (RPM)", 3),
+        ("Agitation", "Power Auto Max (%)", 100),
+        ("Agitation", "Power Auto Min (%)", 3.9),
+        ("Agitation", "Auto Max Startup (%)", 7),
+        ("Agitation", "Samples To Average", 3),
+        ("Agitation", "Min Mag Interval (s)", 0.1),
+        ("Agitation", "Max Change Rate (%/s)", 100),
+        ("Agitation", "PWM Period (us)", 1000),
+        ("Agitation", "PWM OnTime (us)", 1000),
+        ("Agitation", "P Gain  (%/RPM)", 3.5)
+    )
+
+    app = HelloApp('192.168.1.6')
+
+    for grp, setting, val in settings:
+        app.login()
+        call = app.setconfig(grp, setting, val)
+        print(sanitize_url(call))
