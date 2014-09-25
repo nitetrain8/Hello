@@ -215,6 +215,8 @@ class PIDRunner():
                     self._combos.append((p, i, s))
 
         for combo in othercombos:
+            if len(combo) != 3:
+                raise ValueError("wrong # of elements" + repr(combo))
             self._combos.append(combo)
 
         self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d%H%M")
