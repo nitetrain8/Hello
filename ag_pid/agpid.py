@@ -173,7 +173,7 @@ class PIDRunner():
     @type _tests: list[PIDTest]
     """
 
-    docroot = "C:/Users/Public/Documents/PBSSS/Agitation/Mag Wheel PID/"
+    _docroot = "C:/Users/Public/Documents/PBSSS/Agitation/Mag Wheel PID/.repllog/"
 
     def __init__(self, pgains=(), itimes=(), sps=(), othercombos=(),
                  wb_name=None, app_or_ipv4='192.168.1.6'):
@@ -215,11 +215,20 @@ class PIDRunner():
             self._combos.append(combo)
 
         self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d")
+        self._full_xl_name = self._docroot + self._wb_name
         self._logbuf = StringIO()
         self._tests = []
         self._closed = False
 
-        self.xl, self.wb = xlBook2(self.docroot + wb_name, False, False)
+        if exists(self._full_xl_name):
+            self._xl, self.wb = xlBook2(self._full_xl_name, False, False)
+        else:
+            self._xl, self.wb = xlBook2(None, False, False)
+            self.wb.SaveAs(self._wb_name, AddToMru=True)
+
+    def doall(self):
+        self.runall()
+        self.plotall()
 
     def runall(self):
 
@@ -249,7 +258,7 @@ class PIDRunner():
     def plotall(self):
         i = 1
         self._log("Plotting All tests in ", self._wb_name or "New Workbook")
-        with HiddenXl(self.xl):
+        with HiddenXl(self._xl):
             for t in self._tests:
                 self._log("\tCopying data:", repr(t), end=' ')
                 try:
@@ -290,9 +299,9 @@ class PIDRunner():
         print(line, file=self._logbuf, **pkw)
         print(line)
 
-    def _get_log_fname(self):
+    def _get_log_name(self):
 
-        tmplt = self.docroot + "agpid_log %s%%s.log" % datetime.now().strftime("%y%m%d%H%M%S")
+        tmplt = self._docroot + "agpid_log %s%%s.log" % datetime.now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
         while exists(fpth):
@@ -301,7 +310,7 @@ class PIDRunner():
         return fpth, 'w'
 
     def _commit_log(self):
-        fpth, mode = self._get_log_fname()
+        fpth, mode = self._get_log_name()
 
         # just in case the log is really big, avoid derping
         # the whole thing into memory at once.
@@ -319,11 +328,11 @@ class PIDRunner():
         if self._logbuf:
             self._commit_log()
 
-        if self.xl is not None:
-            self.xl.Visible = True
-            self.xl = None
+        if self._xl is not None:
+            self._xl.Visible = True
+            self._xl = None
 
-        tmplt = "./agpid_bkup cache %s%%s.pickle" % datetime.now().strftime("%y%m%d%H%M%S")
+        tmplt = self._docroot + "agpid_bkup cache %s%%s.pickle" % datetime.now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
         while exists(fpth):
@@ -337,8 +346,8 @@ class PIDRunner():
     def __del__(self):
         self.close()
 
-    def _repr(self):
-        l1 = super().__repr__()
+    # def _repr(self):
+    #     l1 = super().__repr__()
 
     def _init_settings(self, app):
         settings = (
@@ -352,7 +361,15 @@ class PIDRunner():
             ("Agitation", "PWM Period (us)", 1000),
             ("Agitation", "PWM OnTime (us)", 1000)
         )
-        # for setting in ("Minimum"):
-        #     try:
-        #         app.login()
-        #         app.setconfig()
+        for grp, setting, val in settings:
+            for _ in range(3):
+                try:
+                    app.login()
+                    app.setconfig(grp, setting, val)
+                except AuthError:
+                    pass
+                else:
+                    break
+
+            else:
+                raise AuthError("Failed to initialize Settings")
