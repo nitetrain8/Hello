@@ -86,14 +86,15 @@ class HelloApp():
             raise AuthError("Bad login " + msg.text)
         return rsp
 
-    def validate_rsp(self, xml):
+    def validate_set_rsp(self, xml):
         root = parse_xml(xml)
         msg = root[1]
         return msg.text == "True"
 
     def setag(self, mode, val):
         url = self.urlbase + "call=set&group=agitation&mode=%s&val1=%f" % (mode, val)
-        return self.call_hello(url)
+        rsp = self.call_hello(url)
+        return self.validate_set_rsp(rsp.read())
 
     def getMainValues(self):
         url = self.urlbase + "call=getMainValues&json=true"
@@ -116,11 +117,16 @@ class HelloApp():
                              % (group, name, str(val))
         rsp = self.call_hello(url)
         txt = rsp.read().decode('utf-8')
-        if not self.validate_rsp(txt):
+        if not self.validate_set_rsp(txt):
             raise AuthError(txt)
 
     def getagpv(self):
         return self.gpmv()['agitation']['pv']
+
+    def getagvals(self):
+        mv = self.gpmv()
+        ag = mv['agitation']
+        return ag['pv'], ag['sp']
 
     def getconfig(self):
         url = self.urlbase + "call=getconfig"

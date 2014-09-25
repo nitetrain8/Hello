@@ -6,12 +6,15 @@ Created in: PyCharm Community Edition
 
 
 """
+from os.path import exists
 from hello.hello import HelloApp, BadError
 from time import time, sleep
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2
 from traceback import format_exc
+from datetime import datetime
 # from io import StringIO
+from officelib.xllib.xlcom import HiddenXl
 
 __author__ = 'Nathan Starkweather'
 
@@ -65,6 +68,12 @@ class PIDTest():
         app.setconfig("Agitation", "P_Gain__(%25%2FRPM)", self.p)
         app.login()
         app.setconfig("Agitation", "I_Time_(min)", self.i)
+
+        app.login()
+        app.setag(2, 0)
+
+        _sleep(30)
+
         app.setag(0, sp)
         settle_end = _time() + settle_time
 
@@ -161,11 +170,13 @@ class PIDTest():
 class PIDRunner():
     """ runner for many PID tests
 
-    @type tests: list[PIDTest]
+    @type _tests: list[PIDTest]
     """
 
+    docroot = "C:/Users/Public/Documents/PBSSS/Agitation/Mag Wheel PID/"
+
     def __init__(self, pgains=(), itimes=(), sps=(), othercombos=(),
-                 ws_name=None, app_or_ipv4='192.168.1.6'):
+                 wb_name=None, app_or_ipv4='192.168.1.6'):
         """
 
         Pass values for ALL of pgains/itimes/sps or NONE. Otherwise,
@@ -183,8 +194,8 @@ class PIDRunner():
         @param othercombos: all other combinations of (p, i, sp) to try
         @type othercombos: collections.Iterable[(int|float, int|float, int|float)]
 
-        @param ws_name: ws to plot in
-        @type ws_name: str
+        @param wb_name: ws to plot in
+        @type wb_name: str
 
 
         """
@@ -192,72 +203,75 @@ class PIDRunner():
         if bool(pgains) != bool(itimes) != bool(sps):
             raise BadError("Must pass in ALL or NONE of pgains, itimes, sps")
 
-        self.app_or_ipv4 = app_or_ipv4
+        self._app_or_ipv4 = app_or_ipv4
 
-        self.combos = []
+        self._combos = []
         for p in pgains:
             for i in itimes:
                 for s in sps:
-                    self.combos.append((p, i, s))
+                    self._combos.append((p, i, s))
 
         for combo in othercombos:
-            self.combos.append(combo)
+            self._combos.append(combo)
 
-        self.wb_name = ws_name
-        self.logbuf = []
-        self.tests = []
+        self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d")
+        self._logbuf = []
+        self._tests = []
+        self._closed = False
+
+        self.xl, self.wb = xlBook2(self.docroot + wb_name, False, False)
 
     def runall(self):
 
-        q = self.app_or_ipv4
+        q = self._app_or_ipv4
         if type(q) is HelloApp:
             app = q
         else:
             app = HelloApp(q)
 
-        # don't use enumerate- don't increment counter
-        # for failed tests
-        for p, i, sp in self.combos:
-            self.log("Running test P:%.2f I:%.2f SP: %.2f" % (p, i, sp))
+        for p, i, sp in self._combos:
+            self._log("Running test P:%.2f I:%.2f SP: %.2f" % (p, i, sp))
             t = PIDTest(p, i, sp, app_or_ipv4=app)
             try:
                 t.run()
             except (KeyboardInterrupt, SystemExit):
-                self.log_err("Got critical interrupt")
+                self._log_err("Got critical interrupt")
+                raise
             except Exception:
-                self.log_err("Error in PIDTest.run():")
+                self._log_err("Error in PIDTest.run():")
                 continue
             else:
-                self.log("Successful test")
-                self.tests.append(t)
+                self._log("Successful test")
+                self._tests.append(t)
 
     def plotall(self):
         i = 1
-        self.log("Plotting All tests in ", self.wb_name or "New Workbook")
-        for t in self.tests:
-            self.log("\tPlotting:", repr(t))
-            try:
-                t.plot(self.wb_name, 1, i)
-                i += 3
-            except:
-                self.log_err("Error plotting")
+        self._log("Plotting All tests in ", self._wb_name or "New Workbook")
+        with HiddenXl(self.xl):
+            for t in self._tests:
+                self._log("\tPlotting:", repr(t))
+                try:
+                    t.plot(self.wb.Name, 1, i)
+                    i += 3
+                except:
+                    self._log_err("Error plotting")
 
-    def log_err(self, *msg):
-        self.log(*msg)
-        self.log(format_exc())
+        self._log("Done plotting.")
 
-    def log(self, *args):
+    def _log_err(self, *msg):
+        self._log(*msg)
+        self._log(format_exc())
+
+    def _log(self, *args):
         """ Log stuff. print to console, save a copy to
         internal log buffer. """
         line = ' '.join(args)
-        self.logbuf.append(line)
+        self._logbuf.append(line)
         print(line)
 
     def _get_log_fname(self):
-        from os.path import exists
-        from datetime import datetime
 
-        tmplt = "./agpid_log %s%%s.log" % datetime.now().strftime("%y%m%d%H%M%S")
+        tmplt = self.docroot + "agpid_log %s%%s.log" % datetime.now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
         while exists(fpth):
@@ -265,12 +279,35 @@ class PIDRunner():
             n += 1
         return fpth, 'w'
 
-    def commit_log(self):
+    def _commit_log(self):
         fpth, mode = self._get_log_fname()
         with open(fpth, mode) as f:
-            f.writelines(self.logbuf)
-        self.logbuf.clear()
+            f.writelines(self._logbuf)
+        self._logbuf.clear()
+
+    def close(self):
+        if self._closed:
+            return
+
+        self._closed = True
+
+        if self._logbuf:
+            self._commit_log()
+
+        if self.xl is not None:
+            self.xl.Visible = True
+            self.xl = None
+
+        tmplt = "./agpid_bkup cache %s%%s.pickle" % datetime.now().strftime("%y%m%d%H%M%S")
+        fpth = tmplt % ''
+        n = 1
+        while exists(fpth):
+            fpth = tmplt % (' ' + str(n))
+            n += 1
+
+        from pysrc.snippets.safe_write import safe_pickle
+
+        safe_pickle(self, fpth)
 
     def __del__(self):
-        if self.logbuf:
-            self.commit_log()
+        self.close()
