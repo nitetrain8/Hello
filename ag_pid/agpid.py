@@ -19,7 +19,7 @@ from io import StringIO
 __author__ = 'Nathan Starkweather'
 
 
-_getnow = datetime.now
+_now = datetime.now
 
 
 class PIDTest():
@@ -244,7 +244,7 @@ class PIDRunner():
         self._init_settings(app)
 
         for p, i, sp in self._combos:
-            self._log("Running test P:%.2f I:%.2f SP: %.2f" % (p, i, sp))
+            self._log("Running test P:%.2f I:%.2f SP: %.2f" % (p, i, sp), end=' ')
             t = PIDTest(p, i, sp, app_or_ipv4=app)
             try:
                 t.run()
@@ -338,13 +338,13 @@ class PIDRunner():
         internal log buffer.
         """
         line = ' '.join(args)
-        now = _getnow().strftime("%m/%d/%Y %H:%M:%S")
+        now = _now().strftime("%m/%d/%Y %H:%M:%S")
         print(now, line, file=self._logbuf, **pkw)
         print(now, line)
 
     def _get_log_name(self):
 
-        tmplt = self._docroot + "repllog/agpid_log %s%%s.log" % _getnow().strftime("%y%m%d%H%M%S")
+        tmplt = self._docroot + "repllog/agpid_log %s%%s.log" % _now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
         while path_exists(fpth):
