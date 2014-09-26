@@ -8,7 +8,7 @@ Created in: PyCharm Community Edition
 """
 from os.path import exists as path_exists, split as path_split
 from os import makedirs
-from hello.hello import HelloApp, BadError, AuthError
+from hello.hello import HelloApp, BadError
 from time import time, sleep
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2
@@ -275,7 +275,7 @@ class PIDRunner():
         else:
             xl, wb = xlBook2(None, True, False)
             wb.SaveAs(self._full_xl_name, AddToMru=True)
-        ws = self._wb.Worksheets(1)
+        ws = wb.Worksheets(1)
 
         return xl, wb, ws
 
@@ -354,7 +354,7 @@ class PIDRunner():
 
     def _get_log_name(self):
 
-        tmplt = self._docroot + "repllog/agpid_log %s%%s.log" % _now().strftime("%y%m%d%H%M%S")
+        tmplt = self._docroot + "repllog\\agpid_log %s%%s.log" % _now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
         while path_exists(fpth):
@@ -388,16 +388,12 @@ class PIDRunner():
         self._ws = None
         self._chart = None
 
-        tmplt = self._docroot + "agpid_bkup cache %s%%s.pickle" % datetime.now().strftime("%y%m%d%H%M%S")
+        tmplt = self._docroot + "agpid_bkup cache %s%%s.pkl" % datetime.now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
         n = 1
         while path_exists(fpth):
             fpth = tmplt % (' ' + str(n))
             n += 1
-
-        # debug
-        from pysrc.snippets import printdir
-        printdir(self, False)
 
         from pysrc.snippets.safe_write import safe_pickle
         safe_pickle(self, fpth)
