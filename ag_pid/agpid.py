@@ -41,12 +41,13 @@ class PIDTest():
 
     app = None
 
-    def __init__(self, p, i, sp, app_or_ipv4='192.168.1.6'):
+    def __init__(self, p, i, d, sp, app_or_ipv4='192.168.1.6'):
 
         self.xrng = None
         self.yrng = None
         self.p = p
         self.i = i
+        self.d = d
         self.sp = sp
         self.passed = False
         self.data = None
@@ -71,6 +72,8 @@ class PIDTest():
         app.setconfig("Agitation", "P_Gain__(%/RPM)", self.p)
         app.login()
         app.setconfig("Agitation", "I_Time_(min)", self.i)
+        app.login()
+        app.setconfig("Agitation", "D Time (min)", self.d)
 
         app.login()
         app.setag(2, 0)
@@ -175,10 +178,10 @@ class PIDRunner():
     @type _tests: list[PIDTest]
     """
 
-    _docroot = "C:/Users/Public/Documents/PBSSS/Agitation/Mag Wheel PID/"
+    _docroot = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
 
-    def __init__(self, pgains=(), itimes=(), sps=(), othercombos=(),
-                 wb_name=None, app_or_ipv4='192.168.1.6'):
+    def __init__(self, pgains=(), itimes=(), dtimes=(), sps=(),
+                 othercombos=(), wb_name=None, app_or_ipv4='192.168.1.6'):
         """
 
         Pass values for ALL of pgains/itimes/sps or NONE. Otherwise,
@@ -202,7 +205,7 @@ class PIDRunner():
 
         """
 
-        if bool(pgains) != bool(itimes) != bool(sps):
+        if bool(pgains) != bool(dtimes) != bool(itimes) != bool(sps):
             raise BadError("Must pass in ALL or NONE of pgains, itimes, sps")
 
         self._app_or_ipv4 = app_or_ipv4
@@ -210,15 +213,16 @@ class PIDRunner():
         self._combos = []
         for p in pgains:
             for i in itimes:
-                for s in sps:
-                    self._combos.append((p, i, s))
+                for d in dtimes:
+                    for s in sps:
+                        self._combos.append((p, i, d, s))
 
         for combo in othercombos:
-            if len(combo) != 3:
+            if len(combo) != 4:
                 raise ValueError("wrong # of elements" + repr(combo))
             self._combos.append(combo)
 
-        self._wb_name = wb_name or "AgPIDTest %s" % datetime.now().strftime("%y%m%d%H%M")
+        self._wb_name = wb_name or "AgPIDTest %s.xlsx" % datetime.now().strftime("%y%m%d%H%M")
         self._full_xl_name = self._docroot + self._wb_name
         self._logbuf = StringIO()
         self._tests = []
@@ -249,9 +253,9 @@ class PIDRunner():
 
         ntests = len(self._combos)
 
-        for n, (p, i, sp) in enumerate(self._combos):
-            self._log("Running test %d of %d P:%.2f I:%.2f SP: %.2f" % (n, ntests, p, i, sp), end=' ')
-            t = PIDTest(p, i, sp, app_or_ipv4=app)
+        for n, (p, i, d, sp) in enumerate(self._combos, 1):
+            self._log("Running test %d of %d P:%.2f I:%.3f D: %.4f SP: %.2f" % (n, ntests, p, i, d, sp), end=' ')
+            t = PIDTest(p, i, d, sp, app_or_ipv4=app)
             try:
                 t.run()
             except (KeyboardInterrupt, SystemExit):
@@ -296,14 +300,14 @@ class PIDRunner():
             if ifpassed and not t.passed:
                continue
 
-            key = (t.p, t.i)
+            key = (t.p, t.i, t.d)
             if key not in groups:
                 groups[key] = self._init_chart()
             t.chartplot(groups[key])
 
         for key in groups:
-            p, i = key
-            name = "P:%sI:%s" % (str(p), str(i))
+            p, i, d = key
+            name = "P-%sI-%sD-%s" % (str(p), str(i), str(d))
             groups[key].Location(1, name)
 
     def plotall(self):
