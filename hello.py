@@ -148,10 +148,15 @@ class HelloApp():
     def getagpv(self):
         return float(self.gpmv()['agitation']['pv'])
 
-    def getagvals(self):
+    def getautoagvals(self):
         mv = self.gpmv()
         ag = mv['agitation']
         return ag['pv'], ag['sp']
+
+    def getmanagvals(self):
+        mv = self.gpmv()
+        ag = mv['agitation']
+        return ag['pv'], ag['man']
 
     def getconfig(self):
         url = self.urlbase + "call=getconfig"

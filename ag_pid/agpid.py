@@ -184,7 +184,7 @@ class PIDRunner():
                  othercombos=(), wb_name=None, app_or_ipv4='192.168.1.6'):
         """
 
-        Pass values for ALL of pgains/itimes/sps or NONE. Otherwise,
+        Pass values for ALL of pgains/itimes/_sps or NONE. Otherwise,
         error.
 
         @param pgains: pgains to do all combinations of w/ itimes
@@ -206,7 +206,7 @@ class PIDRunner():
         """
 
         if bool(pgains) != bool(dtimes) != bool(itimes) != bool(sps):
-            raise BadError("Must pass in ALL or NONE of pgains, itimes, sps")
+            raise BadError("Must pass in ALL or NONE of pgains, itimes, _sps")
 
         self._app_or_ipv4 = app_or_ipv4
 
@@ -370,7 +370,9 @@ class PIDRunner():
         with open(fpth, mode) as f:
             self._logbuf.seek(0, 0)
             for line in self._logbuf:
-                print(line, file=f)
+                # newline was already printed on each
+                # call to log
+                print(line, file=f, end='')
         self._logbuf = StringIO()
 
     def close(self):
