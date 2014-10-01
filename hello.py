@@ -10,7 +10,6 @@ from other modules/ipython sessions/etc.
 
 Maybe turn into __init__.py?
 """
-from urllib.parse import quote
 
 __author__ = 'Nathan Starkweather'
 

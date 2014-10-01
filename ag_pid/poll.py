@@ -8,7 +8,7 @@ Created in: PyCharm Community Edition
 """
 __author__ = 'Nathan Starkweather'
 
-from hello.ag_pid.logger import Logger
+from hello.ag_pid.logger import PLogger
 from hello.hello import HelloApp
 from time import time, sleep
 from datetime import datetime
@@ -20,11 +20,11 @@ class PollError(Exception):
     pass
 
 
-class Poller(Logger):
+class Poller(PLogger):
 
     def __init__(self, sps, ramp_time=40,
                  poll_time=360, app_or_ipv4='192.168.1.6'):
-        Logger.__init__(self, "Poll PV vs. RPM")
+        PLogger.__init__(self, "Poll PV vs. RPM")
 
         self._sps = []
         for s in sps:
@@ -69,24 +69,27 @@ class Poller(Logger):
         next_log_time = _time() + 30
 
         pvs = []
-        while True:
-            pv, realsp = app.getmanagvals()
+        try:
+            while True:
+                pv, actual_sp = app.getmanagvals()
 
-            if realsp != sp:
-                raise PollError("Warning sp doesn't match! %s!=%s" % (str(sp), str(realsp)))
+                if actual_sp != sp:
+                    raise PollError("Warning sp doesn't match! %s!=%s" % (str(sp), str(actual_sp)))
 
-            self._log("Polling. AgPV: %.2f SP: %.2f" % (float(pv), float(realsp)))
-            pvs.append(pv)
-            t = _time()
+                pvs.append(pv)
+                t = _time()
 
-            if t > end:
-                break
-            elif t > next_log_time:
-                next_log_time = t + 30
-                self._log("Polling. %d out of %d seconds remain" % (end - t, poll_time))
+                if t > end:
+                    break
+                elif t > next_log_time:
+                    next_log_time += 10
+                    self._log("Polling. AgPV: %.2f SP: %.2f" %
+                              (float(pv), float(actual_sp)))
+                    self._log("%d of %d seconds passed." % (poll_time - (end - t), poll_time))
 
-            sleep(poll_interval)
-
+                sleep(poll_interval)
+        except KeyboardInterrupt:
+            self._log("Got KeyboardInterrupt, skipping test.")
         return _ave(pvs), pvs
 
     def copy(self):
@@ -112,14 +115,28 @@ class Poller(Logger):
         self._log("Initializing Excel")
         xl, wb, ws, cells = self._init_xl()
 
-        self._log("Preparing data for transfer")
+        # first loop, copy sps. Second loop is untested,
+        # so keeping them separate for now
+
+        self._log("Preparing averaged data for transfer")
         xldata = [(sp, pv) for sp, pv, _ in self._results]
         xldata.sort(key=lambda t: t[0])
 
         self._log("Transfering data")
         cells.Range(cells(3, 2), cells(2 + len(xldata), 3)).Value = xldata
 
+        # Loop again, copy *all* data
+
+        self._log("Preparing all data for transfer")
+        for i, (sp, _, pvs) in enumerate(self._results, 5):
+            cells(2, i).Value = str(sp)
+            end = len(pvs) + 2
+            cells.Range(cells(3, i), cells(end, i)).Value = pvs
+
         self._log("Done.")
+        wb.Save()
+        wb.Close(True)
+        xl.Quit()
 
 
 def _ave(o):

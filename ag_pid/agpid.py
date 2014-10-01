@@ -12,9 +12,10 @@ from hello.hello import HelloApp, BadError
 from time import time, sleep
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2
-from traceback import format_exc
 from datetime import datetime
 from io import StringIO
+from hello.ag_pid.logger import Logger
+from officelib.xllib.xlcom import HiddenXl, FormatChart
 
 __author__ = 'Nathan Starkweather'
 
@@ -114,7 +115,7 @@ class PIDTest():
         return self._passmap[passed]
 
     def __repr__(self):
-        return "P:%.2f I:%.2f Passed: %r" % (self.p, self.i, self.passed)
+        return "P:%.3f I:%.3f D:%.4f Passed: %r" % (self.p, self.i, self.passed)
 
     __str__ = __repr__
 
@@ -164,52 +165,59 @@ class PIDTest():
         cells(1, col + 1).Value = str(self.p)
         cells(2, col + 1).Value = str(self.i)
         cells(1, col + 2).Value = "Passed?"
-        cells(2, col + 2).Value = ("No", "Yes")[self.passed]
-        cells(1, col + 3).Value = "SP:"
+        cells(1, col + 3).Value = ("No", "Yes")[self.passed]
+        cells(2, col + 2).Value = "SP:"
         cells(2, col + 3).Value = str(self.sp)
+        cells(3, col + 2).Value = "D:"
+        cells(3, col + 3).Value = str(self.d)
 
         rng = cells.Range(cells(3, col), cells(len(xld) + 2, col + 1))
         rng.Value = xld
 
 
-class PIDRunner():
+class PIDRunner(Logger):
     """ runner for many PID tests
 
-    @type _tests: list[PIDTest]
+    @type _results: list[PIDTest]
     """
 
     _docroot = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
 
-    def __init__(self, pgains=(), itimes=(), dtimes=(), sps=(),
-                 othercombos=(), wb_name=None, app_or_ipv4='192.168.1.6'):
+    def __init__(self, pgains=(), itimes=(), dtimes=(), sps=(), othercombos=(), wb_name=None,
+                 app_or_ipv4='192.168.1.6'):
         """
+            Pass values for ALL of pgains/itimes/_sps or NONE. Otherwise,
+            error.
 
-        Pass values for ALL of pgains/itimes/_sps or NONE. Otherwise,
-        error.
+            @param pgains: pgains to do all combinations of w/ itimes
+            @type pgains: collections.Iterable[int|float]
 
-        @param pgains: pgains to do all combinations of w/ itimes
-        @type pgains: collections.Iterable[int|float]
+            @param itimes: itimes to do all combinations of w/ pgains
+            @type itimes: collections.Iterable[int|float]
 
-        @param itimes: itimes to do all combinations of w/ pgains
-        @type itimes: collections.Iterable[int|float]
+            @param sps: set points to do all combinations of
+            @type sps: collections.Iterable[int|float]
 
-        @param sps: set points to do all combinations of
-        @type sps: collections.Iterable[int|float]
+            @param othercombos: all other combinations of (p, i, sp) to try
+            @type othercombos: collections.Iterable[(int|float, int|float, int|float)]
 
-        @param othercombos: all other combinations of (p, i, sp) to try
-        @type othercombos: collections.Iterable[(int|float, int|float, int|float)]
+            @param wb_name: ws to plot in
+            @type wb_name: str
+            """
 
-        @param wb_name: ws to plot in
-        @type wb_name: str
+        # Logger stuff
+        Logger.__init__(self, "AgPID test")
+        self.set_docroot(self._docroot)
 
+        # begin init
+        self._app_or_ipv4 = app_or_ipv4
 
-        """
-
+        # if any one of these is empty when the others aren't, combo list will
+        # be empty. Raise Error as warning to user.
         if bool(pgains) != bool(dtimes) != bool(itimes) != bool(sps):
             raise BadError("Must pass in ALL or NONE of pgains, itimes, _sps")
 
-        self._app_or_ipv4 = app_or_ipv4
-
+        # Generate list of combos.
         self._combos = []
         for p in pgains:
             for i in itimes:
@@ -217,29 +225,54 @@ class PIDRunner():
                     for s in sps:
                         self._combos.append((p, i, d, s))
 
+        # user can pass other combos in, but must have all items.
         for combo in othercombos:
             if len(combo) != 4:
                 raise ValueError("wrong # of elements" + repr(combo))
             self._combos.append(combo)
 
+        # Misc
         self._wb_name = wb_name or "AgPIDTest %s.xlsx" % datetime.now().strftime("%y%m%d%H%M")
         self._full_xl_name = self._docroot + self._wb_name
         self._logbuf = StringIO()
-        self._tests = []
+        self._results = []
         self._closed = False
-
         self._xl = None
         self._wb = None
         self._ws = None
         self._chart = None
 
-    def copy(self):
-        return type(self)(othercombos=self._combos, wb_name=self._wb_name, app_or_ipv4=self._app_or_ipv4)
+    @classmethod
+    def copy(cls, self, include_results=False, **attrs):
+        """
+        @param self: old instance
+        @param include_results: copy the list of test results
+        @param attrs: list of arbitrary keyword attrs to copy.
+        @return: Return an empty copy of self with no tests list.
+
+        This lets user re-run tests easily, or edit and reload this file
+        during REPL session to copy parameters from a previous test into
+        one with updated methods.
+
+        call as newinst = PIDPoller.copy(oldinst)
+        """
+        newself = cls(othercombos=self._combos, wb_name=self._wb_name,
+                          app_or_ipv4=self._app_or_ipv4)
+
+        if include_results:
+            newself._results = self._results.copy()
+
+        for name in attrs:
+            val = getattr(self, name)
+            setattr(newself, name, val)
+
+        return newself
 
     def doall(self):
         self.runall()
         self.plotall()
-        self.chartbypid()
+        with HiddenXl(self._xl):
+            self.chartbypid()
 
     def runall(self):
 
@@ -254,19 +287,20 @@ class PIDRunner():
         ntests = len(self._combos)
 
         for n, (p, i, d, sp) in enumerate(self._combos, 1):
-            self._log("Running test %d of %d P:%.2f I:%.3f D: %.4f SP: %.2f" % (n, ntests, p, i, d, sp), end=' ')
+            self._log("Running test %d of %d P:%.2f I:%.3f D: %.4f SP: %.2f" %
+                      (n, ntests, p, i, d, sp))
             t = PIDTest(p, i, d, sp, app_or_ipv4=app)
             try:
                 t.run()
-            except (KeyboardInterrupt, SystemExit):
-                self._log_err("Got critical interrupt")
+            except (KeyboardInterrupt, SystemExit) as e:
+                self._log_err("Got critical interrupt", e)
                 raise
             except Exception:
                 self._log_err("Error in PIDTest.run():")
                 continue
             else:
                 self._log("Successful test")
-                self._tests.append(t)
+                self._results.append(t)
 
     def _init_xl(self):
         if path_exists(self._full_xl_name):
@@ -283,7 +317,7 @@ class PIDRunner():
 
         chart = self._init_chart()
 
-        for t in self._tests:
+        for t in self._results:
             self._log("Plotting data:", repr(t), end=' ')
             try:
                 t.chartplot(chart)
@@ -295,7 +329,7 @@ class PIDRunner():
     def chartbypid(self, ifpassed=False):
 
         groups = {}
-        for t in self._tests:
+        for t in self._results:
 
             if ifpassed and not t.passed:
                continue
@@ -304,6 +338,7 @@ class PIDRunner():
             if key not in groups:
                 groups[key] = self._init_chart()
             t.chartplot(groups[key])
+            FormatChart()
 
         for key in groups:
             p, i, d = key
@@ -323,10 +358,10 @@ class PIDRunner():
 
         self._xl, self._wb, self._ws = self._init_xl()
 
-        ntests = len(self._tests)
+        ntests = len(self._results)
         col = 1
 
-        for n, t in enumerate(self._tests, 1):
+        for n, t in enumerate(self._results, 1):
             self._log("\tCopying data for test %d of %d" % (n, ntests), repr(t), end=' ')
             try:
                 t.plot(self._ws, col)
@@ -338,49 +373,11 @@ class PIDRunner():
 
         self._log("Done copying data for %d tests." % ntests)
 
-    def _log_err(self, *msg, **pkw):
-        self._log(*msg, **pkw)
-        self._log(format_exc())
-
-    def _log(self, *args, **pkw):
-        """
-        Log stuff. print to console, save a copy to
-        internal log buffer.
-        """
-        line = ' '.join(args)
-        now = _now().strftime("%m/%d/%Y %H:%M:%S")
-        print(now, line, file=self._logbuf, **pkw)
-        print(now, line)
-
-    def _get_log_name(self):
-
-        tmplt = self._docroot + "repllog\\agpid_log %s%%s.log" % _now().strftime("%y%m%d%H%M%S")
-        fpth = tmplt % ''
-        n = 1
-        while path_exists(fpth):
-            fpth = tmplt % (' ' + str(n))
-            n += 1
-        return fpth, 'w'
-
-    def _commit_log(self):
-        fpth, mode = self._get_log_name()
-
-        # just in case the log is really big, avoid derping
-        # the whole thing into memory at once.
-        with open(fpth, mode) as f:
-            self._logbuf.seek(0, 0)
-            for line in self._logbuf:
-                # newline was already printed on each
-                # call to log
-                print(line, file=f, end='')
-        self._logbuf = StringIO()
-
     def close(self):
+
         if self._closed:
             return
-        self._closed = True
-
-        self._commit_log()
+        super().close()
 
         if self._xl is not None:
             self._xl.Visible = True
@@ -403,16 +400,13 @@ class PIDRunner():
     def __del__(self):
         self.close()
 
-    # def _repr(self):
-    #     l1 = super().__repr__()
-
     def _init_settings(self, app):
         settings = (
             ("Agitation", "Minimum (RPM)", 3),
             ("Agitation", "Power Auto Max (%)", 100),
-            ("Agitation", "Power Auto Min (%)", 3.9),
-            ("Agitation", "Auto Max Startup (%)", 7),
-            ("Agitation", "Samples To Average", 3),
+            ("Agitation", "Power Auto Min (%)", 0.4),
+            ("Agitation", "Auto Max Startup (%)", 0.6),
+            ("Agitation", "Samples To Average", 1),
             ("Agitation", "Min Mag Interval (s)", 0.1),
             ("Agitation", "Max Change Rate (%/s)", 100),
             ("Agitation", "PWM Period (us)", 1000),
@@ -445,7 +439,7 @@ class PIDRunner():
                     return False
             return True
 
-        matches = tuple(filter(fltr, self._tests))
+        matches = tuple(filter(fltr, self._results))
 
         self._log("Plotting %d tests in new chart" % len(matches))
 
@@ -455,3 +449,21 @@ class PIDRunner():
 
         chart_name = ''.join("%s=%s" % it for it in items)
         chart.Location(1, chart_name)
+
+
+class SimplePIDRunner(PIDRunner):
+    def __init__(self, p=(), i=(), d=(), sp=(), othercombos=(), wb_name=None, app_or_ipv4='192.168.1.6'):
+
+        from numbers import Number
+
+        def to_iter(ob):
+            if isinstance(ob, (int, float, str, Number)):
+                return ob,
+            return ob
+
+        p = to_iter(p)
+        i = to_iter(i)
+        d = to_iter(d)
+        sp = to_iter(sp)
+        super().__init__(pgains=p, itimes=i, dtimes=d, sps=sp,
+                         othercombos=othercombos, wb_name=wb_name, app_or_ipv4=app_or_ipv4)
