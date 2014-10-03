@@ -66,7 +66,7 @@ class Poller(PLogger):
         sleep(ramp_time)
         end = _time() + poll_time
 
-        next_log_time = _time() + 30
+        next_log_time = _time()
 
         pvs = []
         try:
@@ -107,7 +107,7 @@ class Poller(PLogger):
         dir = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
         fpth = dir + name
         xl, wb, ws, cells = xlObjs()
-        wb.SaveAs(fpth)
+        wb.SaveAs(fpth, AddToMru=True)
         return xl, wb, ws, cells
 
     def toxl(self):
@@ -131,7 +131,7 @@ class Poller(PLogger):
         for i, (sp, _, pvs) in enumerate(self._results, 5):
             cells(2, i).Value = str(sp)
             end = len(pvs) + 2
-            cells.Range(cells(3, i), cells(end, i)).Value = pvs
+            cells.Range(cells(3, i), cells(end, i)).Value = [(x,) for x in pvs]
 
         self._log("Done.")
         wb.Save()
