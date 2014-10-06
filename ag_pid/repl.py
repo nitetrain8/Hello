@@ -85,3 +85,67 @@ def test_really_fast2():
         traceback.print_exc()
     return p2
 
+
+def doimports():
+    import sys
+    m = sys.modules['__main__']
+    exec("from officelib.xllib.xlcom import xlObjs, xlBook2", m, m)
+    exec("from hello.ag_pid.agpid import *", m, m)
+
+
+def _set_meso_settings(r):
+    r.set_setting("Agitation", "Auto Max Startup (%)", 0.2)
+    r.set_setting("Agitation", "Power Auto Min (%)", 0.18)
+
+
+def get_ovn_settings3():
+    ps = 0.001, 0.002, 0.003, 0.005
+    its = 0.005, 0.01, 0.02, 0.04
+    ds = (0, 0.001, 0.005)
+    sps = (15, 30, 45)
+
+    return ps, its, ds, sps
+
+
+def run_overnight_rnd():
+    global rnd
+    ps, its, ds, sps = get_ovn_settings3()
+    rnd = SimplePIDRunner(ps, its, ds, sps, (), "AgPID RnD 10-2-14")
+    _runagpid(rnd)
+    return rnd
+
+
+def run_overnight_meso():
+    global meso
+    ps, its, ds, sps = get_ovn_settings3()
+    meso = SimplePIDRunner(ps, its, ds, sps, (), "AgPID Meso3 10-2-14", '192.168.1.16')
+    _set_meso_settings(meso)
+    _runagpid(meso)
+    return meso
+
+
+def run_over_weekend():
+    p = 0.003
+    i = 0.005
+    d = 0.005
+    sps = (10, 15, 20, 25)
+    sps2 = (30, 35, 40)
+    sps3 = (45, 50, 55)
+
+    global r1, r2, r3
+    r1 = SimplePIDRunner(p, i, d, sps)
+    r2 = SimplePIDRunner(p, i, d, sps2)
+    r3 = SimplePIDRunner(p, i, d, sps3)
+
+    for r in (r1, r2, r3):
+        try:
+            _runagpid(r)
+        except:
+            print("Omg Error")
+            import traceback
+            print(traceback.format_exc())
+
+
+def test_xl():
+    r = SimplePIDRunner(0.003, 0.005, 0.005, 15)
+    return r

@@ -6,16 +6,18 @@ Created in: PyCharm Community Edition
 
 
 """
-from os.path import exists as path_exists, split as path_split
+from collections import OrderedDict
+from os.path import exists as path_exists, split as path_split, splitext
 from os import makedirs
 from hello.hello import HelloApp, BadError
 from time import time, sleep
 from officelib.xllib.xladdress import cellRangeStr
-from officelib.xllib.xlcom import xlBook2
+from officelib.xllib.xlcom import xlBook2, FormatChart
 from datetime import datetime
 from io import StringIO
 from hello.ag_pid.logger import Logger
 from officelib.xllib.xlcom import HiddenXl
+from officelib.const import xlValue
 
 __author__ = 'Nathan Starkweather'
 
@@ -43,7 +45,18 @@ class PIDTest():
     app = None
 
     def __init__(self, p, i, d, sp, app_or_ipv4='192.168.1.6'):
-
+        """
+        @param p: pgain
+        @type p: int | float | decimal.Decimal | str
+        @param i: itime
+        @type i: int | float | decimal.Decimal | str
+        @param d: dtime
+        @type d: int | float | decimal.Decimal | str
+        @param sp: set point
+        @type sp: int | float | decimal.Decimal | str
+        @param app_or_ipv4: HelloApp object, or IPV4 to pass to HelloApp constructor
+        @type app_or_ipv4: str | HelloApp
+        """
         self.xrng = None
         self.yrng = None
         self.p = p
@@ -58,7 +71,7 @@ class PIDTest():
         else:
             self.app = HelloApp(app_or_ipv4)
 
-    def run(self, settle_time=60, margin=1, timeout=120):
+    def run(self, settle_time=60, margin=1, timeout=120, mintime=180):
 
         app = self.app
         sp = self.sp
@@ -81,27 +94,36 @@ class PIDTest():
 
         _sleep(30)
 
+        app.login()
         app.setag(0, sp)
         settle_end = _time() + settle_time
+        mintime_end = _time() + mintime
 
         start = _time()
         end = start + timeout
         passed = True
         while True:
 
+            # get time _after_ pv just incase of lag
             pv = app.getagpv()
-            pvs.append((_time() - start, pv))
+            t = _time()
 
-            if not settle_min < pv < settle_max:
-                t = _time()
+            pvs.append((t - start, pv))
+
+            if not (settle_min < pv < settle_max):
                 settle_end = t + settle_time
                 if t > end:
                     passed = False
                     break
-
-            elif _time() > settle_end:
+            elif t > settle_end:
                 break
 
+            _sleep(0.5)
+
+        while _time() < mintime_end:
+            pv = app.getagpv()
+            t = _time()
+            pvs.append((t - start, pv))
             _sleep(0.5)
 
         self.passed = passed
@@ -185,7 +207,6 @@ class PIDTest():
         rng.Value = xld
 
 
-
 class PIDRunner(Logger):
     """ runner for many PID tests
 
@@ -195,7 +216,7 @@ class PIDRunner(Logger):
     _docroot = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
 
     def __init__(self, pgains=(), itimes=(), dtimes=(), sps=(), othercombos=(), wb_name=None,
-                 app_or_ipv4='192.168.1.6'):
+                 app_or_ipv4='192.168.1.6', mintime=180):
         """
             @param pgains: pgains to do all combinations of w/ itimes
             @type pgains: collections.Iterable[int|float]
@@ -208,7 +229,7 @@ class PIDRunner(Logger):
             @param wb_name: ws to plot in
             @type wb_name: str
 
-            Initialize a group of tests. Pgains, itimes, dtimes, sps, othercombos must be iterable.
+            Initialize a group of tests. Pgains, itimes, dtimes, sps, othercombos must be tuple or list.
             If any of (pgains, itimes, dtimes, sps) is empty and any of the others aren't, error
             is raised, as that would result in no tests generated.
 
@@ -241,8 +262,8 @@ class PIDRunner(Logger):
             self._combos.append(combo)
 
         # Misc
-        self._wb_name = wb_name or "AgPIDTest %s.xlsx" % datetime.now().strftime("%y%m%d%H%M")
-        self._full_xl_name = self._docroot + self._wb_name
+        self._wb_name = None
+        self._full_xl_name = None
         self._logbuf = StringIO()
         self._results = []
         self._closed = False
@@ -250,6 +271,11 @@ class PIDRunner(Logger):
         self._wb = None
         self._ws = None
         self._chart = None
+        self._chartmap = None
+        self._mintime = mintime
+
+        wb_name = wb_name or "AgPIDTest %s.xlsx" % datetime.now().strftime("%y%m%d%H%M")
+        self.set_wb_name(wb_name)
 
         # agitation settings
         self.settings = {
@@ -263,6 +289,15 @@ class PIDRunner(Logger):
             ("Agitation", "PWM Period (us)"): 1000,
             ("Agitation", "PWM OnTime (us)"): 1000
         }
+
+    def set_setting(self, group, setting, val):
+        key = (group, setting)
+        self.settings[key] = val
+        self._log("Adding/Changing Setting: %s %s -> %s" % (group, setting, str(val)))
+
+    def set_wb_name(self, name):
+        self._wb_name = name
+        self._full_xl_name = self._docroot + name
 
     @classmethod
     def copy(cls, self, include_results=False, **attrs):
@@ -322,9 +357,9 @@ class PIDRunner(Logger):
         for n, (p, i, d, sp) in enumerate(self._combos, 1):
             self._log("Running test %d of %d P:%.2f I:%.3f D: %.4f SP: %.2f" %
                       (n, ntests, p, i, d, sp))
-            t = PIDTest(p, i, d, sp, app_or_ipv4=app)
+            t = PIDTest(p, i, d, sp, app_or_ipv4=app, )
             try:
-                t.run()
+                t.run(settle_time=120, timeout=180)
             except KeyboardInterrupt:
                 self._log_err("Got keyboard interrupt, skipping test.")
                 ki += 1
@@ -346,8 +381,19 @@ class PIDRunner(Logger):
         Initialize the excel instance used by other functions
         """
         if path_exists(self._full_xl_name):
-            self._log("Opening existing workbook")
-            xl, wb = xlBook2(self._full_xl_name, True, False)
+            self._log("Uh oh, existing workbook.")
+            self._log("Modifying filename.")
+            path, ext = splitext(self._full_xl_name)
+
+            n = 1
+            new_path = ''
+            while True:
+                new_path = (" %d" % n).join((path, ext))
+                if not path_exists(new_path):
+                    break
+                n += 1
+
+            xl, wb = xlBook2(new_path, True, False)
         else:
             xl, wb = xlBook2(None, True, False)
             wb.SaveAs(self._full_xl_name, AddToMru=True)
@@ -362,11 +408,11 @@ class PIDRunner(Logger):
         chart = self._init_chart()
 
         for t in self._results:
-            self._log("Plotting data:", repr(t), end=' ')
+            self._log("Plotting data:", repr(t))
             try:
                 t.chartplot(chart)
             except:
-                self._log_err("Error plotting:")
+                self._log_err("Error plotting")
             else:
                 self._log("Success!")
 
@@ -378,7 +424,7 @@ class PIDRunner(Logger):
         Group all tests with the same p,i,d settings into one chart. Ie,
         all setpoints for a given set of settings in one chart.
         """
-        groups = {}
+        groups = OrderedDict()
         for t in self._results:
 
             if ifpassed and not t.passed:
@@ -389,10 +435,21 @@ class PIDRunner(Logger):
                 groups[key] = self._init_chart()
             t.chartplot(groups[key])
 
-        for key in groups:
+        # loop again and format + move charts to new sheets
+        for key, chart in groups.items():
             p, i, d = key
             name = "P-%sI-%sD-%s" % (str(p), str(i), str(d))
-            groups[key].Location(1, name)
+            title = "PID Test: " + name
+            try:
+                FormatChart(chart, ChartTitle=title, xAxisTitle="Time (s)", yAxisTitle="RPM", Legend=False)
+                chart.Location(1, name)
+                axes = chart.Axes(AxisGroup=2)  # xlPrimary
+                axes(1).HasMajorGridlines = True
+                axes(2).HasMajorGridlines = True
+            except:
+                self._log_err("Error Formatting chart")
+
+        self._chartmap = groups
 
     def plotall(self):
         """
@@ -427,6 +484,7 @@ class PIDRunner(Logger):
                 self._log("Success!")
 
         self._log("Done copying data for %d tests." % ntests)
+        self._xl.Visible = True
 
     def close(self):
         """
@@ -448,6 +506,7 @@ class PIDRunner(Logger):
         self._wb = None
         self._ws = None
         self._chart = None
+        self._chartmap = None
 
         tmplt = self._docroot + "agpid_bkup cache %s%%s.pkl" % datetime.now().strftime("%y%m%d%H%M%S")
         fpth = tmplt % ''
@@ -478,10 +537,12 @@ class PIDRunner(Logger):
         """
 
         self._log("Initializing Settings")
+
         for (grp, setting), val in self.settings.items():
             self._log("Setting %s %s to %s" % (grp, setting, str(val)))
             app.login()
             app.setconfig(grp, setting, val)
+
         self._log("Initialization Successful")
 
     def _init_chart(self):
@@ -493,10 +554,16 @@ class PIDRunner(Logger):
         return chart
 
     def chartbyfilter(self, **kw):
+        """
+        Dumb function do not use.
+        """
         items = tuple(kw.items())
 
         self._log("Charting by filter:", kw)
 
+        # For each k=v pair in the dict passed,
+        # see if ob has attr k with value v. If not,
+        # return false. If all match, return True.
         def fltr(ob):
             for k, v in items:
                 if getattr(ob, k) != v:
@@ -511,7 +578,7 @@ class PIDRunner(Logger):
         for m in matches:
             m.chartplot(chart)
 
-        chart_name = ''.join("%s=%s" % it for it in items)
+        chart_name = ' '.join("%s=%s" % it for it in items)
         chart.Location(1, chart_name)
 
 
