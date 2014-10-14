@@ -90,7 +90,7 @@ def test_really_fast2():
     sps = tuple(range(80, 101, 5))
 
     p2 = Poller(sps, 40, 120)
-    p2._power_curve_results = p._results.copy()
+    p2._results = p._results.copy()
 
     try:
         _poll_overnight(p2)

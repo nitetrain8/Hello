@@ -21,24 +21,11 @@ class PollError(Exception):
     pass
 
 
-class Poller(PLogger):
-    """
-    @type _app: HelloApp
-    """
+class _Poller(PLogger):
 
-    def __init__(self, sps=(), ramp_time=40,
-                 poll_time=360, app_or_ipv4='192.168.1.6'):
-        PLogger.__init__(self, "Poll Pow vs. RPM")
-
-        self._sps = []
-        self._sps.extend(sps)
-
-        self._ramp_time = ramp_time
+    def __init__(self, name, app_or_ipv4):
+        PLogger.__init__(self, name)
         self._app_or_ipv4 = app_or_ipv4
-        self._poll_time = poll_time
-        self._app = None
-        self._power_curve_results = []
-        self._startup_results = []
 
     def _init_app(self):
 
@@ -52,6 +39,46 @@ class Poller(PLogger):
             self._log("Initializing new HelloApp object")
             self._app = HelloApp(self._app_or_ipv4)
 
+    @classmethod
+    def copy(cls, self):
+        new = cls(self._sps, self._ramp_time, self._poll_time, self._app_or_ipv4)
+        new._power_curve_results = self._results.copy()
+        return new
+
+    def _init_xl(self, name=None):
+        from officelib.xllib.xlcom import xlObjs
+
+        date = _now().strftime(self._savedateformat)
+        name = ''.join((
+            name or "Poll Results",
+            " ",
+            date,
+            ".xlsx"
+        ))
+        dir = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
+        fpth = dir + name
+        xl, wb, ws, cells = xlObjs()
+        wb.SaveAs(fpth, AddToMru=True)
+        return xl, wb, ws, cells
+
+
+class Poller(_Poller):
+    """
+    @type _app: HelloApp
+    """
+
+    def __init__(self, sps=(), ramp_time=40,
+                 poll_time=360, app_or_ipv4='192.168.1.6'):
+        super().__init__("Poll Pow vs. RPM", app_or_ipv4)
+
+        self._sps = []
+        self._sps.extend(sps)
+
+        self._ramp_time = ramp_time
+        self._poll_time = poll_time
+        self._app = None
+        self._results = []
+
     def poll(self):
 
         self._init_app()
@@ -64,10 +91,10 @@ class Poller(PLogger):
             except:
                 self._log_err("Error occurred running test")
             else:
-                self._power_curve_results.append((sp, ave, pvs))  # 3 tuple (sp, ave, pvs)
+                self._results.append((sp, ave, pvs))  # 3 tuple (sp, ave, pvs)
 
         # sort here by set point
-        self._power_curve_results.sort(key=lambda v: v[0])
+        self._results.sort(key=lambda v: v[0])
 
     def _test_sp(self, sp, ramp_time, poll_time, poll_interval):
 
@@ -108,40 +135,18 @@ class Poller(PLogger):
             self._log("Got KeyboardInterrupt, skipping test.")
         return _ave(pvs), pvs
 
-    @classmethod
-    def copy(cls, self):
-        new = cls(self._sps, self._ramp_time, self._poll_time, self._app_or_ipv4)
-        new._power_curve_results = self._results.copy()
-        return new
-
-    def _init_xl(self, name=None):
-        from officelib.xllib.xlcom import xlObjs
-
-        date = _now().strftime(self._savedateformat)
-        name = ''.join((
-            name or "Poll Results",
-            " ",
-            date,
-            ".xlsx"
-        ))
-        dir = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
-        fpth = dir + name
-        xl, wb, ws, cells = xlObjs()
-        wb.SaveAs(fpth, AddToMru=True)
-        return xl, wb, ws, cells
-
     def _copy_xl_data(self, cells):
         # first loop, copy sps.
 
         self._log("Preparing averaged data for transfer")
-        xldata = [(sp, pv) for sp, pv, _ in self._power_curve_results]
+        xldata = [(sp, pv) for sp, pv, _ in self._results]
 
         self._log("Transfering data")
         cells.Range(cells(3, 2), cells(2 + len(xldata), 3)).Value = xldata
 
         # Loop again, copy *all* data
         self._log("Preparing all data for transfer")
-        for i, (sp, _, pvs) in enumerate(self._power_curve_results, 5):
+        for i, (sp, _, pvs) in enumerate(self._results, 5):
             cells(2, i).Value = str(sp)
             end = len(pvs) + 2
             cells.Range(cells(3, i), cells(end, i)).Value = [(x,) for x in pvs]
@@ -184,7 +189,7 @@ class Poller(PLogger):
 
         return xrng, yrng
 
-    def toxl_powercurve(self):
+    def toxl(self):
 
         self._log("Initializing Excel for power curve")
         xl, wb, ws, cells = self._init_xl()
@@ -210,9 +215,12 @@ class Poller(PLogger):
             wb.Close(True)  # this also saves. better safe than sorry.
             xl.Quit()
 
-    def toxl_startup(self):
-        self._log("Initializing Excel for power curve")
-        xl, wb, ws, cells = self._init_xl("Startup Test")
+
+class StartupPoller(_Poller):
+
+    def __init__(self, app_or_ipv4='192.168.1.6'):
+        super().__init__("Startup Test", app_or_ipv4)
+        self._results = []
 
     def test_startup(self, hint=None, iters=3, incr=0.1, timeout=30, pre_pause=5, poll_time=30):
         """
@@ -222,10 +230,7 @@ class Poller(PLogger):
         @param timeout: wait this long to detect RPM before increasing SP
         """
         if hint is None:
-            if self._sps:
-                hint = min(self._sps)
-            else:
-                hint = 0.2
+            hint = 0.2
 
         sp = hint
         self._init_app()
@@ -266,7 +271,7 @@ class Poller(PLogger):
                 self._log("Got passing test, polling pv for %s seconds" % poll_time)
                 pvs = self._poll_pv(10, poll_time, 1)
                 self._log("Got startup result for test #%d: wheel started at %s%% power" % (test_no, sp))
-                self._startup_results.append((sp, pvs))
+                self._results.append((sp, pvs))
                 test_no += 1
                 sp = hint
                 if test_no > iters:
@@ -315,6 +320,12 @@ class Poller(PLogger):
 
         return pvs
 
+
+class LowestTester(_Poller):
+    def __init__(self, app_or_ipv4='192.168.1.6'):
+        super().__init__("Low RPM Test", app_or_ipv4)
+        self._results = []
+
     def test_lowest(self, start_at=10, iters=3, decr=0.1, timeout=30, pre_pause=5):
         """
         @param start_at: % power to start at to initialize agitation.
@@ -362,7 +373,7 @@ class Poller(PLogger):
             if stopped:
                 result = sp + decr
                 self._log("Got lowest result for test #%d: wheel started at %s%% power" % (test_no, result))
-                self._startup_results.append((result, lastpvs))
+                self._results.append((result, lastpvs))
                 test_no += 1
                 sp = start_at
                 if test_no > iters:
@@ -402,7 +413,7 @@ def _ave(o):
 
 
 def test():
-    p = Poller()
+    p = StartupPoller()
     # p.test_lowest(10, 3, 1, 10, 5)
     p.test_startup(5, 3, 1, 10, 5, 10)
 
