@@ -46,8 +46,6 @@ def getAdvancedValues(urlbase):
     return xml_parse_call(txt)
 
 
-from time import sleep
-
 class Hello():
     def __init__(self, ipv4=ipv4def):
         self.url_base = "http://{ipv4}/webservice/interface/?&".format(ipv4=ipv4)
@@ -256,20 +254,23 @@ class Hello():
     def update(self, update_widgets=True):
 
         if update_widgets:
-            vars = self.vars
-            for group, params in self.main_values.items():
-                vgroup = vars[group]
-                for k, v in params.items():
-                    vgroup[k][1].set(v)
-
-            avvars = vars['Adv']
-            for k, v in self.adv_values.items():
-                avvars[k][1].set(v)
+            self.root.after(50, self._update)
 
         self.mframe.configure(text="MV: %d-%d, AV: %d-%d" % (self.mvhb,
                                                              self.mvbad,
                                                              self.avhb,
                                                              self.avbad))
+
+    def _update(self):
+        vars = self.vars
+        for group, params in self.main_values.items():
+            vgroup = vars[group]
+            for k, v in params.items():
+                vgroup[k][1].set(v)
+
+        avvars = vars['Adv']
+        for k, v in self.adv_values.items():
+            avvars[k][1].set(v)
 
     def parse_adv_values2(self, root):
         cluster = root[1][0]

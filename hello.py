@@ -44,6 +44,7 @@ class XMLError(HelloError):
 
 _sanitize = re_compile(r"([\s:%/])").sub
 
+# todo: add all url substitution thingies.
 _sanitize_map = {
     ':': '',
     ' ': '_',
@@ -66,7 +67,7 @@ def sanitize_url(call):
 class HelloApp():
 
     _headers = {}
-    _url_template = "http://%s/webservice/interface/?&"
+    _url_template = "http://%s/webservice/interface/"
 
     def __init__(self, ipv4, headers=None):
         self.ipv4 = ipv4
@@ -89,19 +90,24 @@ class HelloApp():
         self.urlbase = self._url_template % ipv4
         self.ipv4 = ipv4
 
-    def call_hello(self, url):
-
+    def call_hello(self, query):
+        """
+        @param query: query string to call hello ("?&call==....")
+        @type query: str
+        @return: http response object
+        @rtype: http.client.HTTPResponse
+        """
+        url = self.urlbase + query
         req = Request(url, headers=self.headers)
         rsp = urlopen(req)
-        rhdrs = rsp.getheaders()
-        for h, v in rhdrs:
+        for h, v in rsp.getheaders():
             if h == 'Set-Cookie':
                 self.headers['Cookie'] = v.split(';', 1)[0]
         return rsp
 
     def login(self, user='user1', pwd='12345'):
-        url = self.urlbase + "call=login&val1=%s&val2=%s&loader=Authenticating...&skipValidate=true" % (user, pwd)
-        rsp = self.call_hello(url)
+        query = "?&call=login&val1=%s&val2=%s&loader=Authenticating...&skipValidate=true" % (user, pwd)
+        rsp = self.call_hello(query)
         txt = rsp.read().decode('utf-8')
         root = parse_xml(txt)
         msg = root[1]
@@ -109,19 +115,27 @@ class HelloApp():
             raise AuthError("Bad login " + msg.text)
         return rsp
 
-    def validate_set_rsp(self, xml):
+    def _validate_set_rsp(self, xml):
         root = parse_xml(xml)
         msg = root[1]
         return msg.text == "True"
 
     def setag(self, mode, val):
-        url = self.urlbase + "call=set&group=agitation&mode=%s&val1=%f" % (mode, val)
-        rsp = self.call_hello(url)
-        return self.validate_set_rsp(rsp.read())
+
+        # note that cpython coerces any type passed to string using %s
+        query = "?&call=set&group=agitation&mode=%s&val1=%s" % (mode, val)
+        rsp = self.call_hello(query)
+        if not self._validate_set_rsp(rsp.read()):
+            raise AuthError
+
+    def set_mode(self, group, mode, val):
+        query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
+        rsp = self.call_hello(query)
+        return self._validate_set_rsp(rsp.read())
 
     def getMainValues(self):
-        url = self.urlbase + "call=getMainValues&json=true"
-        return self.call_hello(url)
+        query = "?&call=getMainValues&json=true"
+        return self.call_hello(query)
 
     gmv = getMainValues
 
@@ -131,21 +145,25 @@ class HelloApp():
     def gpmv(self):
         return self.parsemv(self.getMainValues())['message']
 
-    def setconfig(self, group, name, val):
-        if ':' in name:
-            name = name.replace(":", "")
-        if ' ' in name:
-            name = name.replace(" ", "_")
+    def getAdvancedValues(self):
+        query = "?&call=getAdvancedValues"
+        return self.call_hello(query)
 
-        call = "call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
-        url = self.urlbase + sanitize_url(call)
-        rsp = self.call_hello(url)
+    def getadvv(self):
+        advv = self.getAdvancedValues()
+        xml = advv.read().decode('utf-8')
+        return HelloXML(xml).getdata()['Advanced Values']
+
+    def setconfig(self, group, name, val):
+        name = sanitize_url(name)
+        query = "?&call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
+        rsp = self.call_hello(query)
         txt = rsp.read().decode('utf-8')
-        if not self.validate_set_rsp(txt):
+        if not self._validate_set_rsp(txt):
             raise AuthError(txt)
 
     def getagpv(self):
-        return float(self.gpmv()['agitation']['pv'])
+        return self.gpmv()['agitation']['pv']
 
     def getautoagvals(self):
         mv = self.gpmv()
@@ -157,9 +175,20 @@ class HelloApp():
         ag = mv['agitation']
         return ag['pv'], ag['man']
 
+    def gettemppv(self):
+        return self.gpmv()['temperature']['pv']
+
+    def getautotempvals(self):
+        temp = self.gpmv()['temperature']
+        return temp['pv'], temp['sp']
+
+    def getmantempvals(self):
+        temp = self.gpmv()['temperature']
+        return temp['pv']['man']
+
     def getconfig(self):
-        url = self.urlbase + "call=getconfig"
-        return self.call_hello(url)
+        query = "?&call=getconfig"
+        return self.call_hello(query)
 
     def parseconfig(self, rsp):
         # Rsp is the return from getconfig
@@ -254,10 +283,7 @@ class HelloXML():
 
 
 class ConfigXML(HelloXML):
-    """ getconfig sends back kind of a weird xml
-    so this is a quick override of super's method to return
-    a more convenient mapping.
-    """
+    """ For the config settings """
     def getdata(self):
         if self._parsed:
             return self.data['System_Variables']

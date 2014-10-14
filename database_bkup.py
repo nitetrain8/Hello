@@ -23,8 +23,12 @@ def find_guis(files):
 
 
 def find_most_recent(guis):
-    parser = re_compile(".*?(\d+)(?:\s|\.)").match
+    parser = re_compile(".*?(\d+)(?:\s(\d+)|\.)").match
 
+    # todo
+    # This is a mess. Just parse all dates in guis and sort.
+    # Then, return list of filenames to backup, filename to rename,
+    # and most recent date parsed.
     last_date = 0
     last_version = 1
     latest = None
@@ -40,22 +44,29 @@ def find_most_recent(guis):
         idate = int(date)
         if idate > last_date:
             latest = g
+            last_date = idate
+            last_version = n or 1
         elif idate == last_date:
             if n is not None and n > last_version:
                 latest = g
+                last_version = n
         else:
             others.append(g)
 
-    return last_version, latest
+    return last_version, latest, last_date
 
 
 def backup_gui(dropbox):
 
     files = listdir(dropbox)
     guis = find_guis(files)
-    n, file = find_most_recent(guis)
+    n, file, fdate = find_most_recent(guis)
 
     today = date.today().strftime("%y%m%d")
+
+    if int(today) > fdate:
+        n = 1
+
     fpth = "HELLO Tests gui %s %%d.fmp12" % today
     new = unique_newname(n, fpth)
     bkup = dropbox + "/archive/" + file
@@ -100,10 +111,25 @@ def backup_data(dropbox):
 
     make_backups('/'.join((dropbox, master_data)), target, None)
 
-if __name__ == '__main__':
-    # dropbox = "C:/Users/PBS Biotech/New folder/Dropbox/HELLO Testing"
-    dropbox = "."
+
+def main(db=None):
+    dropbox = db or "."
     backup_gui(dropbox)
     backup_data(dropbox)
-    input("Press Enter to close.")
+
+
+if __name__ == '__main__':
+    dropbox = "C:/Users/PBS Biotech/New folder/Dropbox/HELLO Testing"
+
+    # def copy2(*args):
+    #     print("Copy called")
+    #     for a in args:
+    #         print(a)
+    #
+    # def rename(*args):
+    #     print("rename called")
+    #     for a in args:
+    #         print(a)
+
+    main(dropbox)
 

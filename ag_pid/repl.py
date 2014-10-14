@@ -3,11 +3,25 @@ from hello.ag_pid.agpid import SimplePIDRunner
 from hello.ag_pid.poll import Poller
 
 
-def _poll_overnight(plr):
+def _poll_overnight(p):
     # Poll
+    p.poll()
+    p.toxl()
 
-    plr.poll()
-    plr.toxl()
+
+def poll_overnight_2x200ohm_resistor():
+    global po100r
+
+    sps = (
+    0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.8, 2, 2.5, 3, 3.5, 4, 4.5, 5,
+    6, 7, 8, 9, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90,
+    95, 100
+    )[::-1]
+    p = po100r = Poller(sps)
+
+    _poll_overnight(p)
+
+    return p
 
 
 def _runagpid(r):
@@ -76,7 +90,7 @@ def test_really_fast2():
     sps = tuple(range(80, 101, 5))
 
     p2 = Poller(sps, 40, 120)
-    p2._results = p._results.copy()
+    p2._power_curve_results = p._results.copy()
 
     try:
         _poll_overnight(p2)

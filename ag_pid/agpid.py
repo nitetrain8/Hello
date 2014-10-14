@@ -9,15 +9,16 @@ Created in: PyCharm Community Edition
 from collections import OrderedDict
 from os.path import exists as path_exists, split as path_split, splitext
 from os import makedirs
-from hello.hello import HelloApp, BadError
 from time import time, sleep
-from officelib.xllib.xladdress import cellRangeStr
-from officelib.xllib.xlcom import xlBook2, FormatChart
 from datetime import datetime
 from io import StringIO
-from hello.ag_pid.logger import Logger
+
+from hello.hello import HelloApp, BadError
+from officelib.xllib.xladdress import cellRangeStr
+from officelib.xllib.xlcom import xlBook2, FormatChart
+from hello.logger import Logger
 from officelib.xllib.xlcom import HiddenXl
-from officelib.const import xlValue
+
 
 __author__ = 'Nathan Starkweather'
 
@@ -392,11 +393,13 @@ class PIDRunner(Logger):
                 if not path_exists(new_path):
                     break
                 n += 1
+            xl, wb = xlBook2(None, True, False)
+            wb.SaveAs(new_path, AddToMru=True)
 
-            xl, wb = xlBook2(new_path, True, False)
         else:
             xl, wb = xlBook2(None, True, False)
             wb.SaveAs(self._full_xl_name, AddToMru=True)
+
         ws = wb.Worksheets(1)
 
         return xl, wb, ws

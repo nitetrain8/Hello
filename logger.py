@@ -24,7 +24,7 @@ class Logger():
     class var.
 
     Overrides:
-    var cocroot: directory to store log in
+    var _cacheroot: directory to store log in
     var _log_name: _log_name prefix for log file
     var _savedateformat: strftime compatible date format for log filename
     var _logdateformat: strftime compatible date format for each logger entry
@@ -33,7 +33,11 @@ class Logger():
     _cacheroot = "C:\\.replcache\\"
     _docroot = _cacheroot + "log\\"
     _default_logname = "LoggerLog"
-    _savedateformat = "%m-%d-%Y %H-%M-%S"
+
+    # used log *filename*
+    _savedateformat = "%m-%d-%Y %H%M"
+
+    # used for each line in log entry
     _logdateformat = "%m/%d/%Y %H:%M:%S"
 
     def __init__(self, name=''):
@@ -50,6 +54,13 @@ class Logger():
     def set_log_date_format(self, fmt):
         self._logdateformat = fmt
 
+    def reopen(self):
+        if not self._closed:
+            self.close()
+
+        self._logbuf = StringIO()
+        self._closed = False
+
     def _log(self, *args, **pkw):
         """
         Log stuff. print to console, save a copy to
@@ -58,10 +69,15 @@ class Logger():
         the same way that print() is.
         """
 
-        now = _now().strftime(self._logdateformat)
-        print(now, *args, file=self._logbuf, **pkw)
+        if self._closed:
+            raise ValueError("Logger is closed. Call reopen before logging")
 
-        print(now, *args, **pkw)
+        now = _now().strftime(self._logdateformat)
+
+        # Adding tab to make this (in theory) easy to parse
+        # via string.split('\t') or regex to extract data from log
+        print(now, "\t", *args, file=self._logbuf, **pkw)
+        print(now, "\t", *args, **pkw)
 
     def _log_err(self, *msg, **pkw):
         self._log(*msg, **pkw)
@@ -97,7 +113,7 @@ class Logger():
             for line in self._logbuf:
                 f.write(line)
 
-        self._logbuf = StringIO()
+        del self._logbuf
 
     def close(self):
 
@@ -125,11 +141,11 @@ class PLogger(Logger):
         if not (root.endswith("\\") or root.endswith("/")):
             root += "\\"
 
-        tmplt = root + "%s %s%%s.log" % (self._log_name, _now().strftime(self._savedateformat))
+        tmplt = root + "%s %s%%s.pkl" % (self._log_name, _now().strftime(self._savedateformat))
         fpth = tmplt % ''
         n = 1
         while path_exists(fpth):
-            fpth = tmplt % (' ' + str(n))
+            fpth = tmplt % (' %s' % n)
             n += 1
         return fpth
 

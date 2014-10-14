@@ -37,7 +37,7 @@ def _getUsers(app, attempts, expected):
 
 def run_till_true():
     attempts = 1
-    app = HelloApp()
+    app = HelloApp('192.168.1.6')
     expected = app.getUsers()
 
     if expected == 'True':
@@ -46,7 +46,7 @@ def run_till_true():
 
     while True:
         try:
-            app = HelloApp()
+            app = HelloApp('192.168.1.6')
             msg, attempts = _getUsers(app, attempts, expected)
         except Exception:
             raise
