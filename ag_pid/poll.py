@@ -26,6 +26,7 @@ class _Poller(PLogger):
     def __init__(self, name, app_or_ipv4):
         PLogger.__init__(self, name)
         self._app_or_ipv4 = app_or_ipv4
+        self._app = None
 
     def _init_app(self):
 
@@ -222,6 +223,23 @@ class StartupPoller(_Poller):
         super().__init__("Startup Test", app_or_ipv4)
         self._results = []
 
+    def toxl(self):
+
+        xl, wb, ws, cells = self._init_xl("Startup RPM Test")
+        try:
+            for col, (sp, pvs) in enumerate(self._results, 2):
+                ave = _ave(pvs)
+                cells(2, col).Value = str(sp)
+                cells(3, col).Value = str(ave)
+                cells.Range(cells(4, col), cells(len(pvs) + 3, col)).Value = [(x,) for x in pvs]
+        except:
+            self._log_err("Error occurred during data transfer")
+        finally:
+            self._log("Done.")
+            wb.Save()
+            wb.Close(True)  # this also saves. better safe than sorry.
+            xl.Quit()
+
     def test_startup(self, hint=None, iters=3, incr=0.1, timeout=30, pre_pause=5, poll_time=30):
         """
 
@@ -264,6 +282,7 @@ class StartupPoller(_Poller):
                 _sleep(0.1)
 
             self._log("Initializing agitation and beginning test")
+            app.login()
             app.setag(1, sp)
             passed = self._poll_startup(sp, timeout, pre_pause)
 
@@ -280,8 +299,8 @@ class StartupPoller(_Poller):
 
                 if sp >= 100:
                     raise PollError("Agitation did not start at 100% power")
-                self._log("Agitation did not start. Increasing setpoint.")
                 sp += incr
+                self._log("Agitation did not start. Increasing setpoint to", sp)
 
     def _poll_startup(self, sp, timeout, pre_pause):
 
@@ -326,6 +345,23 @@ class LowestTester(_Poller):
         super().__init__("Low RPM Test", app_or_ipv4)
         self._results = []
 
+    def toxl(self):
+
+        xl, wb, ws, cells = self._init_xl("Low RPM Test")
+        try:
+            for col, (sp, pvs) in enumerate(self._results, 2):
+                ave = _ave(pvs)
+                cells(2, col).Value = str(sp)
+                cells(3, col).Value = str(ave)
+                cells.Range(cells(4, col), cells(len(pvs) + 3, col)).Value = [(x,) for x in pvs]
+        except:
+            self._log_err("Error occurred during data transfer")
+        finally:
+            self._log("Done.")
+            wb.Save()
+            wb.Close(True)  # this also saves. better safe than sorry.
+            xl.Quit()
+
     def test_lowest(self, start_at=10, iters=3, decr=0.1, timeout=30, pre_pause=5):
         """
         @param start_at: % power to start at to initialize agitation.
@@ -340,7 +376,7 @@ class LowestTester(_Poller):
 
         sp = start_at
 
-        self._log("Beginning Startup Test")
+        self._log("Beginning Lowest RPM Test")
         test_no = 1
         lastpvs = ()
         while True:
@@ -379,11 +415,11 @@ class LowestTester(_Poller):
                 if test_no > iters:
                     break
             else:
-                self._log("Agitation did not stop. Lowering setpoint.")
-                lastpvs = pvs
                 if sp <= 0:
                     raise PollError("Agitation did not stop at 0% power")
                 sp -= decr
+                self._log("Agitation did not stop. Lowering setpoint to", sp)
+                lastpvs = pvs
 
     def _poll_lowest(self, sp, timeout, pre_pause):
 
@@ -413,9 +449,13 @@ def _ave(o):
 
 
 def test():
+
+    # p = LowestTester()
+    # p.test_lowest(9, 2, 1, 10, 5)
+    # p.toxl()
     p = StartupPoller()
-    # p.test_lowest(10, 3, 1, 10, 5)
-    p.test_startup(5, 3, 1, 10, 5, 10)
+    p.test_startup(7, 2, 1, 10, 5, 5)
+    p.toxl()
 
 
 if __name__ == '__main__':

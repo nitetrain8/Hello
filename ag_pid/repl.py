@@ -1,4 +1,4 @@
-
+from hello.ag_pid.poll import LowestTester, StartupPoller
 from hello.ag_pid.agpid import SimplePIDRunner
 from hello.ag_pid.poll import Poller
 
@@ -163,3 +163,14 @@ def run_over_weekend():
 def test_xl():
     r = SimplePIDRunner(0.003, 0.005, 0.005, 15)
     return r
+
+
+def overnight_startup_lowest():
+    global p, p2
+    p = LowestTester()
+    p.test_lowest(10, 10, 0.1, 60, 10)
+    p.toxl()
+    p2 = StartupPoller()
+    p2.test_startup(5, 10, 0.1, 20, 10, 60)
+    p2.toxl()
+    return p, p2

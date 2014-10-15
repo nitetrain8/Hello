@@ -10,6 +10,7 @@ from other modules/ipython sessions/etc.
 
 Maybe turn into __init__.py?
 """
+from http.client import HTTPConnection
 
 __author__ = 'Nathan Starkweather'
 
@@ -71,12 +72,34 @@ class HelloApp():
 
     def __init__(self, ipv4, headers=None):
         self.ipv4 = ipv4
-        self.urlbase = self._url_template % ipv4
+        # self.urlbase = self._url_template % ipv4
+        self.urlbase = "/webservice/interface/"
+
+        self._host, self._port = self._parse_ipv4(ipv4)
+        self._connection = self._init_connection(self._host, self._port)
 
         # create instance copy
         self.headers = self._headers.copy()
         if headers is not None:
             self.headers.update(headers)
+
+    def _parse_ipv4(self, ipv4):
+        if ':' in ipv4:
+            host, port = ipv4.split(':')
+        else:
+            host = ipv4
+            port = 80
+        return host, port
+
+    def _init_connection_fromipv4(self, ipv4):
+        return self._init_connection(*self._parse_ipv4(ipv4))
+
+    def _init_connection(self, host, port):
+        c = HTTPConnection(host, port)
+        return c
+
+    def _reconnect(self):
+        self._connection = self._init_connection(self._host, self._port)
 
     def setip(self, ipv4):
         """
@@ -89,6 +112,8 @@ class HelloApp():
         """
         self.urlbase = self._url_template % ipv4
         self.ipv4 = ipv4
+        self._host, self._port = self._parse_ipv4(ipv4)
+        self._connection = self._init_connection(self._host, self._port)
 
     def call_hello(self, query):
         """
@@ -98,8 +123,8 @@ class HelloApp():
         @rtype: http.client.HTTPResponse
         """
         url = self.urlbase + query
-        req = Request(url, headers=self.headers)
-        rsp = urlopen(req)
+        self._connection.request('GET', url, None, self.headers)
+        rsp = self._connection.getresponse()
         for h, v in rsp.getheaders():
             if h == 'Set-Cookie':
                 self.headers['Cookie'] = v.split(';', 1)[0]
@@ -125,8 +150,11 @@ class HelloApp():
         # note that cpython coerces any type passed to string using %s
         query = "?&call=set&group=agitation&mode=%s&val1=%s" % (mode, val)
         rsp = self.call_hello(query)
-        if not self._validate_set_rsp(rsp.read()):
+        # DEBUG
+        txt = rsp.read()
+        if not self._validate_set_rsp(txt):
             raise AuthError
+        return rsp, txt
 
     def set_mode(self, group, mode, val):
         query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
@@ -203,6 +231,8 @@ class HelloApp():
         return ' '.join((base, 'ipv4', self.ipv4))
 
     __str__ = __repr__
+
+
 
 
 class HelloXML():
@@ -307,7 +337,19 @@ if __name__ == '__main__':
 
     app = HelloApp('192.168.1.6')
 
-    for grp, setting, val in settings:
-        app.login()
-        call = app.setconfig(grp, setting, val)
-        print(sanitize_url(call))
+    # for grp, setting, val in settings:
+    #     app.login()
+    #     call = app.setconfig(grp, setting, val)
+    #     print(sanitize_url(call))
+    # app.login()
+
+    i = 1
+    from time import sleep, time
+    start = time()
+    while True:
+        print("loop %d after %d seconds" % (i, time()-start))
+        r, txt = app.setag(1, 10)
+        print(r.getheaders())
+        print(txt)
+        i += 1
+        sleep(1)
