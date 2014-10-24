@@ -168,9 +168,61 @@ def test_xl():
 def overnight_startup_lowest():
     global p, p2
     p = LowestTester()
-    p.test_lowest(10, 10, 0.1, 60, 10)
-    p.toxl()
+    try:
+        p.test_lowest(10, 10, 0.1, 60, 10)
+        p.toxl()
+    except:
+        import traceback
+        print(traceback.format_exc())
+
     p2 = StartupPoller()
-    p2.test_startup(5, 10, 0.1, 20, 10, 60)
-    p2.toxl()
+    try:
+        p2.test_startup(5, 10, 0.1, 20, 10, 60)
+        p2.toxl()
+    except:
+        import traceback
+        print(traceback.format_exc())
+
     return p, p2
+
+
+def kla_overnight(app=None):
+    from hello.kla import KLATest
+    from hello import HelloApp
+    exps = [(0, sp, 200) for sp in range(10, 51, 10)]
+    exps.append((0, 20, 500))
+
+    global kt, batches, batch_list_before, batch_list_after
+
+    try:
+        if app is None:
+            app = HelloApp("192.168.1.6")
+        batch_list_before = app.getbatches()
+        kt = KLATest(app)
+        batches = kt.run_experiments(2, exps)
+        app = HelloApp('192.168.1.6')
+        batch_list_after = app.getbatches()
+    finally:
+        while True:
+            try:
+                print("Attempting to shut off DO")
+                app = HelloApp('192.168.1.6')
+                if app.gpmv()['do']['mode'] != 2:
+                    print("DO Wasn't off, logging in to turn it off")
+                    app.login()
+                    app.setdo(2, 0, 0)
+                print("Yay")
+                break
+            except Exception:
+                import traceback
+                print("==========================================")
+                print("ERROR SHUTTING DOWN TEST")
+                print(traceback.format_exc())
+                print("==========================================")
+
+
+if __name__ == '__main__':
+    from hello import HelloApp
+    app = HelloApp("192.168.1.6")
+    r = app.getdoravalues()
+    print(r)

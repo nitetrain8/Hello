@@ -281,7 +281,7 @@ class StartupPoller(_Poller):
                     raise PollError("Error: agitation did not stop.")
                 _sleep(0.1)
 
-            self._log("Initializing agitation and beginning test")
+            self._log("Initializing agitation with sp=%s" % sp)
             app.login()
             app.setag(1, sp)
             passed = self._poll_startup(sp, timeout, pre_pause)
@@ -295,6 +295,7 @@ class StartupPoller(_Poller):
                 sp = hint
                 if test_no > iters:
                     break
+                self._log()
             else:
 
                 if sp >= 100:
@@ -378,6 +379,11 @@ class LowestTester(_Poller):
 
         self._log("Beginning Lowest RPM Test")
         test_no = 1
+
+        # This variable is used to store the set of pvs on the
+        # previous loop iteration. Once a failure to agitate
+        # occurs, this variable holds the set of pvs corresponding
+        # to the lowest setpoint at which agitation proceeded.
         lastpvs = ()
         while True:
 
@@ -418,6 +424,7 @@ class LowestTester(_Poller):
                 if sp <= 0:
                     raise PollError("Agitation did not stop at 0% power")
                 sp -= decr
+                sp = round(sp, 3)
                 self._log("Agitation did not stop. Lowering setpoint to", sp)
                 lastpvs = pvs
 
@@ -430,11 +437,13 @@ class LowestTester(_Poller):
         _sleep(pre_pause)
         end = _time() + timeout
         pvs = []
+
+        sp = round(sp, 3)
         while True:
             pv, ret_sp = app.getmanagvals()
             pvs.append(pv)
 
-            if ret_sp != sp:
+            if round(ret_sp, 3) != sp:
                 raise PollError("SP != actual setpoint")
             elif pv <= 0:
                 return True, None
