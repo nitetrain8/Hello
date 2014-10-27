@@ -15,8 +15,8 @@ from http.client import HTTPConnection
 
 __author__ = 'Nathan Starkweather'
 
-from xml.etree.ElementTree import XML as parse_xml
-from json import loads
+from xml.etree.ElementTree import XML as parse_xml, ElementTree
+from json import loads as json_loads
 from re import compile as re_compile
 
 
@@ -61,8 +61,8 @@ def _sanitize_cb(m):
     return _sanitize_map[m.group(0)]
 
 
-def sanitize_url(call):
-    return _sanitize(_sanitize_cb, call)
+def sanitize_url(url, cb=_sanitize_cb):
+    return _sanitize(cb, url)
 
 
 class HelloApp():
@@ -71,7 +71,7 @@ class HelloApp():
     _url_template = "http://%s/webservice/interface/"
 
     def __init__(self, ipv4, headers=None):
-        self.ipv4 = ipv4
+        self._ipv4 = ipv4
         # self._urlbase = self._url_template % ipv4
         self._urlbase = "/webservice/interface/"
 
@@ -82,6 +82,9 @@ class HelloApp():
         self.headers = self._headers.copy()
         if headers is not None:
             self.headers.update(headers)
+
+        self._tree = ElementTree()
+        self._parse_xml = self._tree.parse
 
     def _parse_ipv4(self, ipv4):
         """
@@ -107,8 +110,8 @@ class HelloApp():
         @return: HTTPConnection object
         @rtype: HTTPConnection
         """
-
-        return self._init_connection(*self._parse_ipv4(ipv4))
+        host, port = self._parse_ipv4(ipv4)
+        return self._init_connection(host, port)
 
     def _init_connection(self, host, port):
         """
@@ -125,10 +128,8 @@ class HelloApp():
         """
         Internal convenience to reconnect using stored (host, port).
         """
-        # try to force connection to be completely gone
         self._connection.close()
         self._connection.connect()
-        # self._connection = self._init_connection(self._host, self._port)
 
     def setip(self, ipv4):
         """
@@ -140,8 +141,10 @@ class HelloApp():
         User responsible for making sure they didn't screw up the ipv4.
         Set internal ip address
         """
+        if ipv4 == self._ipv4:
+            return
         self._urlbase = self._url_template % ipv4
-        self.ipv4 = ipv4
+        self._ipv4 = ipv4
         self._host, self._port = self._parse_ipv4(ipv4)
         self._connection = self._init_connection(self._host, self._port)
 
@@ -199,23 +202,14 @@ class HelloApp():
     def login(self, user='user1', pwd='12345'):
         query = "?&call=login&val1=%s&val2=%s&loader=Authenticating...&skipValidate=true" % (user, pwd)
         rsp = self.call_hello(query)
-        txt = rsp.read().decode('utf-8')
-        root = parse_xml(txt)
-        msg = root[1]
-        if msg.text != "True":
-            raise AuthError("Bad login " + msg.text)
-        return rsp
-
-    def _validate_set_rsp(self, xml):
-        root = parse_xml(xml)
-        msg = root[1]
-        return msg.text == "True"
+        return self._do_set_validate(rsp)
 
     def _do_set_validate(self, rsp):
-        txt = rsp.read()
-        if not self._validate_set_rsp(txt):
-            raise AuthError
-        return txt
+        root = self._parse_xml(rsp)
+        msg = root[1]
+        if msg.text != "True":
+            raise AuthError(msg.text)
+        return True
 
     def startbatch(self, name):
         query = "?&call=setStartBatch&val1=%s" % name
@@ -237,13 +231,13 @@ class HelloApp():
         """
         # not sure what timeout does
         query = "?&call=getReport&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
-                                                    (mode, type, val1, val2, timeout)
+                (mode, type, val1, val2, timeout)
         return self.call_hello(query)
 
     def getbatches(self, raw=False):
         query = "?&call=getBatches&loader=Loading+batches..."
         rsp = self.call_hello(query)
-        xml = BatchListXML(rsp.read().decode('utf-8'))
+        xml = BatchListXML(rsp)
         if raw:
             return xml
         return xml.getdata()
@@ -262,7 +256,7 @@ class HelloApp():
     def getdatareport_bybatchname(self, name):
         query = "?&call=getBatches&loader=Loading+batches..."
         rsp = self.call_hello(query)
-        xml = BatchListXML(rsp.read().decode('utf-8'))
+        xml = BatchListXML(rsp)
         try:
             id = xml.getbatchid(name)
         except KeyError:
@@ -291,13 +285,12 @@ class HelloApp():
     def set_mode(self, group, mode, val):
         query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
         rsp = self.call_hello(query)
-        return self._validate_set_rsp(rsp.read())
+        return self._do_set_validate(rsp.read())
 
     def getdoravalues(self):
         query = "?&call=getDORAValues"
         rsp = self.call_hello(query)
-        txt = rsp.read().decode('utf-8')
-        xml = HelloXML(txt)
+        xml = HelloXML(rsp)
 
         # Get dora values ends up returning a blank element
         # for the name of the cluster, so the dict ends up
@@ -309,43 +302,40 @@ class HelloApp():
 
     def getMainValues(self):
         query = "?&call=getMainValues&json=true"
-        return self.call_hello(query)
+        rsp = self.call_hello(query)
+        mv = json_loads(rsp.read().decode('utf-8'))
+        return mv['message']
 
+    # backward compatibility
     gmv = getMainValues
-
-    def parsemv(self, mv):
-        return loads(mv.read().decode('utf-8'))
-
-    def gpmv(self):
-        return self.parsemv(self.getMainValues())['message']
+    gpmv = getMainValues
 
     def getAdvancedValues(self):
         query = "?&call=getAdvancedValues"
-        return self.call_hello(query)
+        rsp = self.call_hello(query)
+        return HelloXML(rsp).getdata()['Advanced Values']
 
-    def getadvv(self):
-        advv = self.getAdvancedValues()
-        xml = advv.read().decode('utf-8')
-        return HelloXML(xml).getdata()['Advanced Values']
+    # backward compatibility
+    getadvv = getAdvancedValues
 
     def setconfig(self, group, name, val):
         name = sanitize_url(name)
         query = "?&call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
         rsp = self.call_hello(query)
-        txt = rsp.read().decode('utf-8')
-        if not self._validate_set_rsp(txt):
-            raise AuthError(txt)
+        return self._do_set_validate(rsp)
 
     def _trycal(self, sensor, val1, target1, val2=None, target2=None):
         if val2 is None or target2 is None:
             # two point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s&val2=%s&target2=%s" % (sensor, val1, target1,
-                                                                                        val2, target2)
+                                                                                       val2, target2)
         else:
             # one point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s" % (sensor, val1, target1)
 
         return self.call_hello(query)
+
+    # Convenience functions
 
     def getdopv(self):
         return self.gpmv()['do']['pv']
@@ -374,21 +364,19 @@ class HelloApp():
         temp = self.gpmv()['temperature']
         return temp['pv']['man']
 
+    # config
+
     def getconfig(self):
         query = "?&call=getconfig"
-        return self.call_hello(query)
-
-    def parseconfig(self, rsp):
-        # Rsp is the return from getconfig
-        cfg = ConfigXML(rsp.read())
+        rsp = self.call_hello(query)
+        cfg = HelloXML(rsp).getdata()['System Variables']
         return cfg
 
-    def gpcfg(self):
-        return self.parseconfig(self.getconfig())
+    gpcfg = getconfig
 
     def __repr__(self):
         base = super().__repr__()
-        return ' '.join((base, 'ipv4', self.ipv4))
+        return ' '.join((base, 'ipv4', self._ipv4))
 
     __str__ = __repr__
 
@@ -403,18 +391,9 @@ def _fast_parse_message(xml_string):
 class HelloXML():
 
     def __init__(self, xml):
-        root = parse_xml(xml)
+        root = ElementTree().parse(xml)
 
-        self._parse_types = {
-            'DBL': self.parse_float,
-            'I32': self.parse_int,
-            'I16': self.parse_int,
-            'U16': self.parse_int,
-            'U8': self.parse_int,
-            'Cluster': self.parse_cluster,
-            'String': self.parse_string
-        }
-
+        self._parse_types = self._parse_types
         self._parsed = False
         name, parsed = self.parse(root)
         self.parse_dict = {name: parsed}
@@ -453,10 +432,10 @@ class HelloXML():
         for c in elems:
             ctag = c.tag
             parser = get_parser(ctag)
-            if parser is None:
-                k, v = self.parse(c)
-            else:
+            if parser:
                 k, v = parser(c)
+            else:
+                k, v = self.parse(c)
             rv[k] = v
         return rv
 
@@ -483,14 +462,15 @@ class HelloXML():
         val = self.parse_children(e[2:])
         return name, val
 
-
-class ConfigXML(HelloXML):
-    """ For the config settings """
-    def getdata(self):
-        if self._parsed:
-            return self.data['System_Variables']
-        else:
-            raise XMLError("Oh No, no Data!")
+    _parse_types = {
+        'DBL': parse_float,
+        'I32': parse_int,
+        'I16': parse_int,
+        'U16': parse_int,
+        'U8': parse_int,
+        'Cluster': parse_cluster,
+        'String': parse_string
+    }
 
 
 class BatchEntry():
@@ -540,19 +520,9 @@ class BatchListXML():
     a different parsing scheme, and its own class.
     """
     def __init__(self, xml):
-        root = parse_xml(xml)
+        root = ElementTree().parse(xml)
 
-        self._parse_types = {
-            'DBL': self.parse_float,
-            'I32': self.parse_int,
-            'I16': self.parse_int,
-            'U16': self.parse_int,
-            'U8': self.parse_int,
-            'Cluster': self.parse_cluster,
-            'String': self.parse_string,
-            'Array': self.parse_array
-        }
-
+        self._parse_types = self._parse_types
         self._parsed = False
         name, parsed = self.parse(root)
         self.parse_dict = {name: parsed}
@@ -591,13 +561,8 @@ class BatchListXML():
         return self.ids_to_batches[id]['Name']
 
     def getbatchid(self, name):
+        name = name.lower()
         return self.names_to_batches[name]['ID']
-
-    def getresult(self):
-        if self._parsed:
-            return self.ids_to_batches
-        else:
-            raise BadError("No result!")
 
     def parse(self, e):
         name = e.tag
@@ -661,6 +626,17 @@ class BatchListXML():
             val = self.parse_children(e[2:])
         name = val['ID']
         return name, val
+
+    _parse_types = {
+        'DBL': parse_float,
+        'I32': parse_int,
+        'I16': parse_int,
+        'U16': parse_int,
+        'U8': parse_int,
+        'Cluster': parse_cluster,
+        'String': parse_string,
+        'Array': parse_array
+    }
 
 
 def __test1():

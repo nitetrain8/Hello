@@ -43,16 +43,21 @@ class KLATest(Logger, HelloThing):
         HelloThing.__init__(self, app_or_ipv4)
         self._max_mfc_rate = max_mfc_rate
         self._vessel_max = vessel_max
-        self._setup_timeout = setup_timeout or (2**31 - 1)
+        self._setup_timeout = setup_timeout or (2 ** 31 - 1)
         self._init_app()
 
         # temp hack to solve connection issues 10/22/14
         import types
         klatest = self
+        klatest._newcons = 0
 
         def reconnect(self):
             klatest._log("Connection reconnecting")
-            self.reconnect()
+            klatest._newcons += 1
+            # This is not a typo
+            # need to call super method, but can't use super() here because it
+            # will refer to super(KLATest) instead!
+            HelloApp.reconnect(self)
             self.login()
         self._app.reconnect = types.MethodType(reconnect, self._app)
 
@@ -63,23 +68,17 @@ class KLATest(Logger, HelloThing):
         app.login()
         app.setag(1, 50)
         app.setdo(1, 0, 500)
-        # app.setdo(1, 100, 500)
-        # app.setmg(1, 0.5)
 
         start = _time()
-        timeout = start + self._setup_timeout
 
-        # self._log("Beginning setup with timeout of %d seconds" % self._setup_timeout)
-
+        self._log("Begin setup. Waiting for DO < 20%")
         log_time = _time() + 10
         while app.getdopv() > 20:
             t = _time()
             if t > log_time:
+                log_time = int(t) + 10
                 self._log("Waiting for DO to fall below 20.")
                 self._log("%d seconds: %.1f%% DO" % (t - start, app.getdopv()))
-                log_time = t + 10
-            # if t > timeout:
-            #     raise KLAError("Test Timed out")
             _sleep(1)
 
         app.setdo(2, 0, 0)
@@ -99,34 +98,68 @@ class KLATest(Logger, HelloThing):
         app.setmg(1, self._max_mfc_rate)
 
         self._log("Purging headspace at %.3f LPM for %d seconds" % (self._max_mfc_rate, sleep_time))
-        _sleep(sleep_time)
+
+        time = _time
+        sleep = _sleep
+        t = time()
+        end = t + sleep_time
+        log_time = int(t) + 10
+
+        while t < end:
+            if t > log_time:
+                log_time = int(t) + 10
+                left = int(end - t)
+                self._log("Purging headspace. %s seconds remaining" % left)
+            t = time()
+            sleep(5)
 
         # login again in case sleep_time was long
         app.login()
         app.setmg(2, 0)
+
+    def run(self, volume, experiments):
+        # batches is list of batch names
+        batches = self.run_experiments(volume, experiments)
+        batch_list = self._app.getbatches(True)
+
+        reports = []
+        for b in batches:
+            id = batch_list.getbatchid(b)
+            r = self._app.getdatareport_bybatchid(id)
+            reports.append((b, id, r))
+        return reports
 
     def run_experiments(self, volume, experiments):
         """
         @param volume: volume of media in L
         @param experiments: 3 tuple (ag_mode, ag_sp, flow_rate)
         @type experiments: ((int | float, int | float, int | float)) | list[(int | float, int | float, int | float)]
-        @return:
+        @return: list of batches
+        @rtype: list[str]
         """
         batches = []
-        for mode, sp, flowrate in experiments:
+
+        self._log("Running %d experiments." % len(experiments))
+        for i, (mode, sp, flowrate) in enumerate(experiments, 1):
+
+            self._log("Running test %d of %d" % i, len(experiments))
+
             try:
                 self.setup()
             except KeyboardInterrupt:
-                self._log_err("Got keyboard interrupt, skipping setup")
+                self._log_err("Got keyboard interrupt, skipping setup.")
+
             try:
                 self.clear_headspace(volume)
             except KeyboardInterrupt:
-                self._log_err("Got keyboard interrupt, skipping headspace purge")
+                self._log_err("Got keyboard interrupt, skipping headspace purge.")
+
             try:
                 b = self.experiment(mode, sp, flowrate)
                 batches.append(b)
             except KeyboardInterrupt:
-                self._log_err("Got keyboard interrupt, skipping test")
+                self._log_err("Got keyboard interrupt, skipping test.")
+                continue
             finally:
                 mv = self._app.gpmv()
                 if mv['do']['mode'] != 2:
@@ -136,7 +169,7 @@ class KLATest(Logger, HelloThing):
                             self._app.setdo(2, 0, 0)
                             break
                         except Exception:
-                            self._log_err("Error shutting down test")
+                            self._log_err("Error shutting down test.")
                             self._app.reconnect()
 
         return batches
@@ -148,7 +181,7 @@ class KLATest(Logger, HelloThing):
         app = self._app
         app.login()
 
-        self._log("Initializing Agitation with mode=%s sp=%s" % (ag_mode, ag_sp))
+        self._log("Initializing Agitation with mode=%s sp=%s." % (ag_mode, ag_sp))
         app.setag(ag_mode, ag_sp)
 
         # if setpoint is auto mode, wait for pv to reach correct value
@@ -162,11 +195,11 @@ class KLATest(Logger, HelloThing):
                     break
                 t = _time()
                 if t > log_time:
-                    self._log("Waiting for Agitation to reach setpoint. PV = %d" % app.getagpv())
-                    log_time = t + 10
+                    log_time = int(t) + 10
+                    self._log("Waiting for Agitation to reach setpoint. PV = %d." % app.getagpv())
                 _sleep(1)
                 if t > end:
-                    raise KLAError("Agitation didn't reach setpoint")
+                    raise KLAError("Agitation didn't reach setpoint.")
 
         app.setmg(1, flow_rate / 1000)
 
@@ -175,11 +208,11 @@ class KLATest(Logger, HelloThing):
         start = time()
         timeout = start + 14 * 60
 
-        self._log("Beginning KLA Experiment")
+        self._log("Beginning KLA Experiment.")
 
         batch_name = "KLA%s-%s-%s" % (ag_mode, ag_sp, flow_rate)
 
-        self._log("Starting new batch named '%s'" % batch_name)
+        self._log("Starting new batch named '%s'." % batch_name)
         if app.batchrunning():
             app.endbatch()
         app.startbatch(batch_name)
@@ -189,14 +222,14 @@ class KLATest(Logger, HelloThing):
             t = time()
             pv = app.getdopv()
             if t > log_time:
-                self._log("Test running for %d seconds. DO PV = %.1f" % (t, pv))
+                self._log("Test running, %d seconds passed. DO PV = %.1f." % (t - start, pv))
                 log_time = t + 10
             if t > timeout:
                 break
             if pv > 90:
                 break
 
-        self._log("Test finished. DO PV = %.1f after %d seconds" % (app.getdopv(), time() - start))
+        self._log("Test finished. DO PV = %.1f after %d seconds." % (app.getdopv(), time() - start))
 
         self._log("Ending batch")
         app.endbatch()

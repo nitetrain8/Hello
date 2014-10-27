@@ -192,16 +192,24 @@ def kla_overnight(app=None):
     exps = [(0, sp, 200) for sp in range(10, 51, 10)]
     exps.append((0, 20, 500))
 
-    global kt, batches, batch_list_before, batch_list_after
+    global kt, batches
 
+    if app is None:
+        app = HelloApp("192.168.1.6")
+    kt = KLATest(app)
     try:
-        if app is None:
-            app = HelloApp("192.168.1.6")
-        batch_list_before = app.getbatches()
-        kt = KLATest(app)
-        batches = kt.run_experiments(2, exps)
-        app = HelloApp('192.168.1.6')
-        batch_list_after = app.getbatches()
+        exps = kt.run_experiments(2, exps)
+    except:
+        raise
+    else:
+        global reports
+        batches = app.getbatches(True)
+        reports = []
+        for e in exps:
+            id = batches.getbatchid(e)
+            r = app.getdatareport_bybatchid(id)
+            reports.append((e, id, r))
+        return reports
     finally:
         while True:
             try:
