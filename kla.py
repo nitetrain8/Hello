@@ -6,10 +6,18 @@ Created in: PyCharm Community Edition
 
 
 """
+from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatterLines
+from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSeries, HiddenXl
+from officelib.xllib.xladdress import chart_range_strs
+from re import match
+from os.path import split as path_split
+from officelib.xllib.xlcom import AddTrendlines
+
+
 __author__ = 'Nathan Starkweather'
 
 
-from hello import Logger, HelloThing, HelloError, HelloApp
+from hello import HelloThing, HelloError, HelloApp, Logger
 from time import time as _time, sleep as _sleep
 
 
@@ -236,6 +244,193 @@ class KLATest(Logger, HelloThing):
         return batch_name
 
 
+def _insert_time_col(ws, cells, col):
+
+    from officelib.xllib.xladdress import cellStr, cellRangeStr
+
+    end_row = cells(2, col - 1).End(xlDown).Row
+    ws.Columns(col).Insert(Shift=xlToRight)
+    formula = "=(%s-%s) * 24" % (cellStr(2, col - 1), cellStr(2, col - 1, 1, 1))
+    cells(2, col).Value = formula
+    fill_range = cellRangeStr(
+        (2, col), (end_row, col)
+    )
+
+    af_rng = cells.Range(fill_range)
+    cells(2, col).AutoFill(af_rng)
+
+    ws.Columns(col).NumberFormat = "0.00"
+
+
+def _insert_ln_col(ws, cells, col):
+    from officelib.xllib.xladdress import cellStr, cellRangeStr
+
+    end_row = cells(2, col - 1).End(xlDown).Row
+    ws.Columns(col).Insert(Shift=xlToRight)
+    formula = "=-LN(100-%s)" % cellStr(2, col - 1)
+    cells(2, col).Value = formula
+    fill_range = cellRangeStr(
+        (2, col), (end_row, col)
+    )
+
+    af_rng = cells.Range(fill_range)
+    cells(2, col).AutoFill(af_rng)
+
+    ws.Columns(col).NumberFormat = "0.00000"
+
+
+class _dbgmeta(type):
+    def __new__(mcs, name, bases, kwargs):
+        from types import FunctionType
+
+        def decorator(f):
+            def wrapper(*args, **kwargs):
+                print("Function called:", f.__name__)
+                rv = f(*args, **kwargs)
+                print("Function returned:", f.__name__)
+                return rv
+            return wrapper
+
+        for k, v in kwargs.items():
+            if isinstance(v, FunctionType):
+                kwargs[k] = decorator(v)
+
+        # fuck it
+        for k, v in globals().items():
+            if isinstance(v, FunctionType):
+                globals()[k] = decorator(v)
+
+        return type.__new__(mcs, name, bases, kwargs)
+
+
+class KLAAnalyzer():
+    def __init__(self, files):
+        self._files = files
+        self._xl, self._wb, self._ws, self._cells = xlObjs()
+        self._ws.Name = "Data"
+        self._ln_chart = None
+        self._linear_chart = None
+        self._current_col = 1
+
+    def analyze_all(self):
+        self._init_linear_chart()
+        self._init_ln_chart()
+        for i, f in enumerate(self._files, 1):
+            print("Analyzing file #%d of %d" % (i, len(self._files)))
+            self.analyze_file(f)
+
+        self._linear_chart.Location(1, "Time v DOPV")
+        self._ln_chart.Location(1, "Time v LN DOPV")
+
+        for chart in (self._ln_chart, self._linear_chart):
+            try:
+                AddTrendlines(chart)
+            except:
+                print("Couldn't add trendlines")
+
+    def close(self):
+        self._xl = self._wb = self._ws = self._cells = None
+
+    def analyze_file(self, file):
+
+        # identifying name for chart/test/series
+        file = file.replace("/", "\\")
+        print("Analyzing file:", file[file.rfind("\\") + 1:])
+        try:
+            mode, ag, gas_flow = match(r"kla(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
+        except TypeError:
+            name = "KLA"
+        else:
+            if mode == '0':
+                unit = " RPM"
+            else:
+                unit = "% Power"
+            name = "KLA %s%s %s mLPM" % (ag, unit, gas_flow)
+
+        print("Processing Worksheet.")
+        xl_name = self.process(file, name)
+        print("Adding data to compiled data set.")
+        self.add_to_compiled(xl_name, name)
+
+    def _init_linear_chart(self):
+        chart = CreateChart(self._ws, xlXYScatterLines)
+        FormatChart(chart, None, "KLA Data (compiled)", "Time(hr)", "DOPV(%)")
+        self._linear_chart = chart
+
+    def _init_ln_chart(self):
+        chart = CreateChart(self._ws, xlXYScatterLines)
+        FormatChart(chart, None, "KLA Data (compiled, -LN(100-DOPV))", "Time(hr)", "-LN(100-DOPV)")
+        self._ln_chart = chart
+
+    def add_to_compiled(self, file, series_name):
+        xl, wb, ws, cells = xlObjs(file, visible=False)
+
+        with HiddenXl(xl):
+            # copy data to new ws
+            do_cell = cells.Find("DOPV(%)", cells(1, 1), SearchOrder=xlByRows)
+            fleft = do_cell.Column
+            fright = cells(2, fleft).End(xlToRight).Column
+            fbottom = do_cell.End(xlDown).Row
+
+            value = cells.Range(cells(1, fleft), cells(fbottom, fright)).Value
+            trng = self._cells.Range(self._cells(1, self._current_col),
+                                     self._cells(fbottom, self._current_col + fright - fleft))
+            trng.Value = value
+
+            # add LN chart
+            if self._ln_chart is None:
+                self._init_ln_chart()
+            chart = self._ln_chart
+            xrng, yrng = chart_range_strs(self._current_col, self._current_col + 1, 2, fbottom, self._ws.Name)
+            CreateDataSeries(chart, xrng, yrng, series_name)
+
+            # add linear chart
+            if self._linear_chart is None:
+                self._init_linear_chart()
+            chart = self._linear_chart
+            xrng, yrng = chart_range_strs(self._current_col, self._current_col + 2, 2, fbottom, self._ws.Name)
+            CreateDataSeries(chart, xrng, yrng, series_name)
+
+        self._current_col += fright - fleft + 2
+
+    def process(self, file, chart_name):
+        """
+        Analyzing data is ugly. Analyze 'file', where 'file' is a csv file
+         corresponding to a batch report.
+        """
+
+        xl, wb, ws, cells = xlObjs(file, visible=False)
+        with HiddenXl(xl):
+            do_cell = cells.Find(What="DOPV(%)", After=cells(1, 1), SearchOrder=xlByRows)
+            xcol = do_cell.Column + 1
+            end_row = do_cell.End(xlDown).Row
+            _insert_time_col(ws, cells, xcol)
+            _insert_ln_col(ws, cells, xcol + 2)
+
+            # ln v time for specific chart
+            xrng, yrng = chart_range_strs(xcol, xcol + 2, 2, end_row, ws.Name)
+            chart = CreateChart(ws, xlXYScatterLines)
+            CreateDataSeries(chart, xrng, yrng, "KLA")
+
+            FormatChart(chart, None, chart_name, "Time(min)", "-LN(DO PV (%))", True)
+            chart.Location(1)
+
+            # file should always be csv, but be generic just in case.
+            save_name = file.replace(file[file.rfind("."):], '.xlsx')
+            wb.SaveAs(save_name, AddToMru=True)
+
+        return save_name
+
+
+
+def __test_analyze_kla():
+    file = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\kla0-10-200 id-35 27-10-14.csv"
+    # analyze_kla(file)
+
+tka = __test_analyze_kla
+
+
 if __name__ == '__main__':
-    test = KLATest('192.168.1.6')
-    test.setup()
+    # test = KLATest('192.168.1.6')
+    # test.setup()
+    __test_analyze_kla()

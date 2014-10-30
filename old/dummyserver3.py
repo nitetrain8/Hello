@@ -16,11 +16,19 @@ except (ImportError, SystemError):
     except (ImportError, SystemError):
         from hello.restutil import recv_restful, BadError, get_call
 
-from socket import socket, timeout
+from socket import socket
 from select import select
 
 
-true_rsp = b'<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message>True</Message></Reply>'
+true_rsp = b'<?xml version="1.0" encoding="windows-1252" standalone="no" ?>' \
+           b'<Reply>' \
+            b'<Result>' \
+                b'True' \
+            b'</Result>' \
+            b'<Message>' \
+                b'True' \
+            b'</Message>' \
+           b'</Reply>'
 
 
 class Dummy():

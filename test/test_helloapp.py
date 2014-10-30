@@ -7,6 +7,11 @@ Created in: PyCharm Community Edition
 Module: test_module
 Functions: test_functions
 
+10/27/2014:
+This module is obsolete (and has been for awhile).
+I'm leaving this here since the dummy server may prove to
+be a useful reference.
+
 """
 import unittest
 from os import makedirs
@@ -135,8 +140,7 @@ class DummyServer():
         """
         mainthread = Thread(None, self.mainloop)
         self.mainthread = mainthread
-        killevent = Event()
-        self.killevent = killevent
+        self.killevent = Event()
 
         mainthread.daemon = True
         mainthread.start()
@@ -250,8 +254,6 @@ class DummyServer():
         response = dummy_http_msg(status, headers, body)
         return response
 
-
-
     def accept_connection(self):
         """
         Accept incoming connection to the server. Open connection, make a buffered reader,
@@ -306,103 +308,6 @@ class DummyServer():
         if not self._clean_exit:
             print("Warning, leaked resources:")
             print(*(sock for sock in self.fd_sock if sock is not None), sep="\n")
-
-
-# noinspection PyProtectedMember
-class TestHello(unittest.TestCase):
-
-    def test_build_call(self):
-        """
-        @return: None
-        @rtype: None
-        """
-
-        app = HelloApp()
-
-        args = [
-            ("foo", "bar"),
-            ("baz", "fizz"),
-            ("buzz", "12"),
-            ("_", "1")
-        ]
-
-        msg = app._build_call(args).decode('utf-8')
-
-        lines = msg.splitlines(False)
-
-        # check the request line
-        exp_req_line = "GET webservice/interface/?&foo=bar&baz=fizz&buzz=12&_=1 HTTP/1.1"
-        result_req_line = lines[0]
-        self.assertEqual(exp_req_line, result_req_line)
-
-        # ensure message is properly terminated- Last four chars should be '\r\n\r\n'
-        self.assertEqual(msg[-4:], '\r\n\r\n')
-
-        # ensure all headers are here.
-        result_headers = set(tuple(item.split(": ", 1)) for item in lines[1:-1])
-        for header in app.headers.items():
-            self.assertIn(header, result_headers)
-
-        app.sock.close()
-        app.fp.close()
-
-    def test_communciate(self):
-        """
-        Test communicate. Yay.
-        """
-        server = socket()
-        host = gethostbyname(gethostname())
-        port = 12345
-
-        server.bind((host, port))
-        server.listen(1)
-        server.settimeout(5)
-
-        # socket.accept is blocking but socket.connect is not.
-        # Set up the hello connection first, then accept.
-        app = HelloApp(host, port)
-        con, addr = server.accept()
-        confp = con.makefile('rwb')
-
-        args = [
-            ("foo", "bar"),
-            ("baz", "fizz"),
-            ("buzz", "12"),
-            ("_", "1")
-        ]
-
-        msg = app._build_call(args)
-        n = len(msg)
-
-        queue = Queue()
-
-        # launch this server process in a separate thread to avoid deadlock
-
-        def test_get_msg(fp, n, q):
-            result = fp.read(n)
-            print("RESULT GOT:", result)
-            q.put(result)
-            fp.write(b"REQ_LINE\r\nHEADER: VALUE\r\n\r\n0\r\n\r\n")
-            fp.flush()
-
-        # Possible w/o threads?
-
-        sthread = Thread(None, test_get_msg, None, (confp, n, queue))
-        sthread.start()
-        req, headers, body = app.communicate(msg)
-        sthread.join()
-        msg_read = queue.get()
-
-        self.assertEqual(req, "REQ_LINE")
-        self.assertEqual(headers, {"HEADER": "VALUE"})
-        self.assertEqual(body, '')
-        self.assertEqual(msg_read, msg)
-
-        con.close()
-        confp.close()
-        app.sock.close()
-        app.fp.close()
-        server.close()
 
 
 if __name__ == '__main__':

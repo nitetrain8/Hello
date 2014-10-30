@@ -59,7 +59,7 @@ def tearDownModule():
         pass
 
 
-from hello.hello import ConfigXML, HelloXML
+from hello.hello import HelloXML
 
 
 class TestXMLParse(unittest.TestCase):
@@ -81,7 +81,7 @@ class TestXMLParse(unittest.TestCase):
         rsp = app.getconfig()
         xml = rsp.read()
 
-        print(ConfigXML(xml))
+        print(HelloXML(xml))
         print(xml)
 
     def test_getconfig(self):
@@ -89,7 +89,7 @@ class TestXMLParse(unittest.TestCase):
         with open(getconfig_file, 'rb') as f:
             xml = f.read()
 
-        p = ConfigXML(xml).getdata()
+        p = HelloXML(xml).getdata()
 
         print(p['Agitation'])
 

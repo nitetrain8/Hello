@@ -20,6 +20,7 @@ class HelloThing():
 
         self._app = None
         self._app_or_ipv4 = app_or_ipv4
+        self._init_app()
 
     def _init_app(self):
 

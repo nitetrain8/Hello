@@ -72,7 +72,6 @@ class HelloApp():
 
     def __init__(self, ipv4, headers=None):
         self._ipv4 = ipv4
-        # self._urlbase = self._url_template % ipv4
         self._urlbase = "/webservice/interface/"
 
         self._host, self._port = self._parse_ipv4(ipv4)
@@ -389,9 +388,13 @@ def _fast_parse_message(xml_string):
 
 
 class HelloXML():
+    _tree = ElementTree()
 
     def __init__(self, xml):
-        root = ElementTree().parse(xml)
+        if isinstance(xml, str):
+            root = parse_xml(xml)
+        else:
+            root = self._tree.parse(xml)
 
         self._parse_types = self._parse_types
         self._parsed = False
@@ -479,8 +482,9 @@ class BatchEntry():
 
     I tried to avoid having to use a whole object
     to represent each batch, but I think it will be
-    easier to create a batch object and then create
-    containers to hold them as lists, dicts, or otherwise.
+    easier to create a batch object and then manipulate
+    lists of batch objects, rather than trying to slopily
+    move them around in any other form.
     """
 
     def __init__(self, id, name='', serial_number=0, user='', start_time=0, stop_time=0,
