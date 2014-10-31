@@ -138,12 +138,13 @@ class KLATest(Logger, HelloThing):
     def run(self, volume, experiments):
         # batches is list of batch names
         batches = self.run_experiments(volume, experiments)
-        batch_list = self._app.getbatches(True)
 
         if self._reports is None:
             reports = self._reports = []
         else:
             reports = self._reports
+
+        batch_list = self._app.getbatches(True)
 
         for name in batches:
             id = batch_list.getbatchid(name)
@@ -165,7 +166,7 @@ class KLATest(Logger, HelloThing):
         self._log("Running %d experiments." % len(experiments))
         for i, (mode, sp, flowrate) in enumerate(experiments, 1):
 
-            self._log("Running test %d of %d" % i, len(experiments))
+            self._log("Running test %d of %d" % (i, len(experiments)))
 
             try:
                 self.setup()
@@ -178,7 +179,7 @@ class KLATest(Logger, HelloThing):
                 self._log_err("Got keyboard interrupt, skipping headspace purge.")
 
             try:
-                b = self.experiment(mode, sp, flowrate)
+                b = self.experiment(mode, sp, flowrate, volume)
                 batches.append(b)
             except KeyboardInterrupt:
                 self._log_err("Got keyboard interrupt, skipping test.")
@@ -197,7 +198,7 @@ class KLATest(Logger, HelloThing):
 
         return batches
 
-    def experiment(self, ag_mode, ag_sp, flow_rate):
+    def experiment(self, ag_mode, ag_sp, flow_rate, volume):
         """
         @param flow_rate: flow rate in *mL per min*
         """
@@ -233,7 +234,7 @@ class KLATest(Logger, HelloThing):
 
         self._log("Beginning KLA Experiment.")
 
-        batch_name = "KLA%s-%s-%s" % (ag_mode, ag_sp, flow_rate)
+        batch_name = "KLA%s-%s-%s-%s" % (ag_mode, volume, ag_sp, flow_rate)
 
         self._log("Starting new batch named '%s'." % batch_name)
         if app.batchrunning():
@@ -260,14 +261,19 @@ class KLATest(Logger, HelloThing):
 
 
 class _dbgmeta(type):
+    level = 0
+
     def __new__(mcs, name, bases, kwargs):
         from types import FunctionType
 
         def decorator(f):
             def wrapper(*args, **kwargs):
-                print("Function called:", f.__name__)
+                nonlocal mcs
+                print(mcs.level * " ", "Function called: ", f.__name__, sep='')
+                mcs.level += 1
                 rv = f(*args, **kwargs)
-                print("Function returned:", f.__name__)
+                mcs.level -= 1
+                print(mcs.level * " ", "Function returned: ", f.__name__, sep='')
                 return rv
             return wrapper
 
@@ -284,31 +290,36 @@ class _dbgmeta(type):
 
 
 class KLAAnalyzer():
-    def __init__(self, files=()):
+    def __init__(self, files=(), path=''):
         self._files = files
         self._xl, self._wb, self._ws, self._cells = xlObjs()
         self._ws.Name = "Data"
+        self._path = path or "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\"
+        if not self._path.endswith("\\"):
+            self._path += "\\"
         self._ln_chart = None
         self._linear_chart = None
         self._current_col = 1
 
     def analyze_all(self):
-        self._init_linear_chart()
-        self._init_ln_chart()
-        for i, f in enumerate(self._files, 1):
-            print("Analyzing file #%d of %d" % (i, len(self._files)))
-            self.analyze_file(f)
+        with HiddenXl(self._xl):
+            self._init_linear_chart()
+            self._init_ln_chart()
+            for i, f in enumerate(self._files, 1):
+                print("Analyzing file #%d of %d" % (i, len(self._files)))
+                self.analyze_file(f)
 
-        self._linear_chart.Location(1, "Time v DOPV")
-        self._ln_chart.Location(1, "Time v LN DOPV")
+            self._linear_chart.Location(1, "Time v DOPV")
+            self._ln_chart.Location(1, "Time v LN DOPV")
 
-        for chart in (self._ln_chart, self._linear_chart):
-            try:
-                AddTrendlines(chart)
-            except:
-                print("Couldn't add trendlines")
+            for chart in (self._ln_chart, self._linear_chart):
+                try:
+                    AddTrendlines(chart)
+                except:
+                    print("Couldn't add trendlines")
 
     def close(self):
+        self._xl.Visible = True
         self._xl = self._wb = self._ws = self._cells = self._ln_chart = self._ln_chart = None
 
     def analyze_file(self, file, name=''):
@@ -319,15 +330,20 @@ class KLAAnalyzer():
 
         if not name:
             try:
-                mode, ag, gas_flow = match(r"kla(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
-            except TypeError:
+                groups = match(r"kla(\d*)-(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
+            except AttributeError:
                 name = "KLA"
             else:
+                if len(groups) == 4:
+                    mode, volume, ag, gas_flow = groups
+                else:
+                    mode, ag, gas_flow = groups
+                    volume = 'unkn'
                 if mode == '0':
                     unit = " RPM"
                 else:
                     unit = "% Power"
-                name = "KLA %s%s %s mLPM" % (ag, unit, gas_flow)
+                name = "KLA %sL %s%s %s mLPM" % (volume, ag, unit, gas_flow)
 
         print("Processing Worksheet.")
         xl_name = self.process_csv(file, name)
@@ -437,7 +453,7 @@ class KLAAnalyzer():
 
 def __test_analyze_kla():
     file = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\kla0-10-200 id-35 27-10-14.csv"
-    KLAAnalyzer().process_csv(file)
+    KLAAnalyzer((file,)).analyze_all()
 
 tka = __test_analyze_kla
 

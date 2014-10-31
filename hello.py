@@ -123,6 +123,10 @@ class HelloApp():
         c = HTTPConnection(host, port)
         return c
 
+    def close(self):
+        if self._connection:
+            self._connection.close()
+
     def reconnect(self):
         """
         Internal convenience to reconnect using stored (host, port).
@@ -172,7 +176,13 @@ class HelloApp():
                 if nattempts > retrycount:
                     raise
             except Exception:
+                # debug. eventually all connection quirks should be worked out
+                # and handled appropriately.
                 import traceback
+                print("=====================================")
+                print("UNKNOWN ERROR OCCURRED DURING REQUEST")
+                print("REQUESTED URL: <%s>" % url)
+                print("=====================================")
                 print(traceback.format_exc())
                 if nattempts > retrycount:
                     raise
@@ -240,7 +250,7 @@ class HelloApp():
         xml = BatchListXML(rsp)
         if raw:
             return xml
-        return xml.getdata()
+        return xml.ids_to_batches
 
     def getreport_byname(self, type, val1):
         return self.getreport('byBatch', type, val1)
@@ -433,7 +443,10 @@ class HelloXML():
         for c in elems:
             parser = get_parser(c.tag)
             if parser:
-                k, v = parser(c)
+                # must pass parser self explicitly, as
+                # parse types dict is created in class body
+                # (before methods become bound).
+                k, v = parser(self, c)
             else:
                 k, v = self.parse(c)
             rv[k] = v
@@ -531,21 +544,21 @@ class BatchListXML():
         self.result = parsed['Result']
 
         ids_to_batches = parsed['Message']['Batches (cluster)']
-        names_to_batches = {}
 
         # map names <-> ids
         # note that many batches may have the same
         # newer names are overridden with older names,
         # where 'newer' means 'higher id'
-        for stuff in ids_to_batches.values():
-            stuff2 = stuff.copy()
-            name = stuff2["Name"]
-            id = stuff2['ID']
+        names_to_batches = {}
+        for entry in ids_to_batches.values():
+            entry_copy = entry.copy()
+            name = entry_copy["Name"]
+            id = entry_copy['ID']
             if name in names_to_batches:
                 if id > names_to_batches[name]['ID']:
-                    names_to_batches[name] = stuff2
+                    names_to_batches[name] = entry_copy
             else:
-                names_to_batches[name] = stuff2
+                names_to_batches[name] = entry_copy
 
         self.names_to_batches = names_to_batches
         self.ids_to_batches = OrderedDict(sorted(ids_to_batches.items()))
@@ -583,7 +596,10 @@ class BatchListXML():
         for c in elems:
             parser = get_parser(c.tag)
             if parser:
-                k, v = parser(c)
+                # must pass parser self explicitly, as
+                # parse types dict is created in class body
+                # (before methods become bound).
+                k, v = parser(self, c)
             else:
                 k, v = self.parse(c)
             rv[k] = v
@@ -689,6 +705,7 @@ def __test2():
     dump_dict(b.names_to_batches, "Names to batches")
     dump_dict(b.ids_to_batches, "Ids to batches")
 
+
 def __test3():
     print(HelloApp('192.168.1.6').getdatareport_bybatchid(2))
 
@@ -696,6 +713,10 @@ def __test3():
 def __test4():
     print(HelloApp('192.168.1.6').getdatareport_bybatchname('KLA0-10-200'))
 
+
+def __test5():
+    HelloApp('192.168.1.6').getdoravalues()
+
 if __name__ == '__main__':
-    __test2()
+    __test5()
 

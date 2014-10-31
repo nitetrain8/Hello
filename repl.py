@@ -1,3 +1,4 @@
+
 from hello.ag_pid.poll import LowestTester, StartupPoller
 from hello.ag_pid.agpid import SimplePIDRunner
 from hello.ag_pid.poll import Poller
@@ -186,6 +187,20 @@ def overnight_startup_lowest():
     return p, p2
 
 
+def export(reports):
+    path = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\"
+    import datetime
+
+    now = datetime.datetime.now().strftime("%d-%m-%y")
+    filenames = []
+    for name, id, r in reports:
+        filename = "%s%s id-%d %s.csv" % (path, name, id, now)
+        with open(filename, 'wb') as f:
+            f.write(r)
+        filenames.append(filename)
+    return filenames
+
+
 def kla_overnight(app=None, exps=None, volume=2):
     from hello.kla import KLATest
     from hello import HelloApp
@@ -194,37 +209,25 @@ def kla_overnight(app=None, exps=None, volume=2):
         exps.append((0, 20, 500))
 
     global kt, batches
-
-    def export(reports):
-        path = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\"
-        import datetime
-
-        now = datetime.datetime.now().strftime("%d-%m-%y")
-        filenames = []
-        for name, id, r in reports:
-            filename = "%s%s id-%d %s.csv" % (path, name, id, now)
-            with open(filename, 'wb') as f:
-                f.write(r)
-            filenames.append(filename)
-        return filenames
-
+    global reports, results, batches
     if app is None:
         app = HelloApp("192.168.1.6")
     kt = KLATest(app)
     try:
-        exps = kt.run_experiments(volume, exps)
+        results = kt.run_experiments(volume, exps)
     except:
         raise
     else:
-        global reports
         batches = app.getbatches(True)
         reports = []
-        for e in exps:
+        for e in results:
             id = batches.getbatchid(e)
             r = app.getdatareport_bybatchid(id)
             reports.append((e, id, r))
         return export(reports)
     finally:
+        # This ugly block make sure that DO is off after test no matter what
+        # except for KeyboardInterrupt or SystemExit.
         while True:
             try:
                 print("Attempting to shut off DO")
@@ -246,20 +249,28 @@ def kla_overnight(app=None, exps=None, volume=2):
 def analyze_batches(files=None):
     import os
     from hello import kla
+    pth = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel"
     if files is None:
-        pth = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel"
         files = ['\\'.join((pth, f)) for f in os.listdir(pth)]
         files = [f for f in files if f.endswith('.csv') and 'kla' in f]
-    analyzer = kla.KLAAnalyzer(files)
+    analyzer = kla.KLAAnalyzer(files, pth + "\\")
     try:
         analyzer.analyze_all()
     finally:
         analyzer._xl.Visible = True
+
+
+def kla2():
+    files = kla_overnight(None, None, 3)
+    analyze_batches(files)
+
+
 
 if __name__ == '__main__':
     # from hello import HelloApp
     # app = HelloApp("192.168.1.6")
     # r = app.getdoravalues()
     # print(r)
-    files = kla_overnight(None, None, 3)
-    analyze_batches(files)
+    import hello.kla
+    hello.kla.__test_analyze_kla()
+
