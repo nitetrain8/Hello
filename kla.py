@@ -7,11 +7,10 @@ Created in: PyCharm Community Edition
 
 """
 from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatterLines
-from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSeries, HiddenXl
-from officelib.xllib.xladdress import chart_range_strs
+from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSeries, HiddenXl, AddTrendlines
+from officelib.xllib.xladdress import chart_range_strs, cellStr, cellRangeStr
 from re import match
 from os.path import split as path_split
-from officelib.xllib.xlcom import AddTrendlines
 
 
 __author__ = 'Nathan Starkweather'
@@ -23,6 +22,16 @@ from time import time as _time, sleep as _sleep
 
 class KLAError(HelloError):
     pass
+
+
+class KLAReport():
+    def __init__(self, name=None, id=None, contents=None):
+        self.name = name
+        self.id = id
+        self.contents = contents
+
+    def read(self):
+        return self.contents
 
 
 class KLATest(Logger, HelloThing):
@@ -53,21 +62,22 @@ class KLATest(Logger, HelloThing):
         self._vessel_max = vessel_max
         self._setup_timeout = setup_timeout or (2 ** 31 - 1)
         self._init_app()
+        self._reports = None
 
-        # temp hack to solve connection issues 10/22/14
-        import types
-        klatest = self
-        klatest._newcons = 0
-
-        def reconnect(self):
-            klatest._log("Connection reconnecting")
-            klatest._newcons += 1
-            # This is not a typo
-            # need to call super method, but can't use super() here because it
-            # will refer to super(KLATest) instead!
-            HelloApp.reconnect(self)
-            self.login()
-        self._app.reconnect = types.MethodType(reconnect, self._app)
+        # # temp hack to solve connection issues 10/22/14
+        # import types
+        # klatest = self
+        # klatest._newcons = 0
+        #
+        # def reconnect(self):
+        #     klatest._log("Connection reconnecting")
+        #     klatest._newcons += 1
+        #     # This is not a typo
+        #     # need to call super method, but can't use super() here because it
+        #     # will refer to super(KLATest) instead!
+        #     HelloApp.reconnect(self)
+        #     self.login()
+        # self._app.reconnect = types.MethodType(reconnect, self._app)
 
     def setup(self):
 
@@ -130,11 +140,16 @@ class KLATest(Logger, HelloThing):
         batches = self.run_experiments(volume, experiments)
         batch_list = self._app.getbatches(True)
 
-        reports = []
-        for b in batches:
-            id = batch_list.getbatchid(b)
+        if self._reports is None:
+            reports = self._reports = []
+        else:
+            reports = self._reports
+
+        for name in batches:
+            id = batch_list.getbatchid(name)
             r = self._app.getdatareport_bybatchid(id)
-            reports.append((b, id, r))
+            b = KLAReport(name, id, r)
+            reports.append(b)
         return reports
 
     def run_experiments(self, volume, experiments):
@@ -244,41 +259,6 @@ class KLATest(Logger, HelloThing):
         return batch_name
 
 
-def _insert_time_col(ws, cells, col):
-
-    from officelib.xllib.xladdress import cellStr, cellRangeStr
-
-    end_row = cells(2, col - 1).End(xlDown).Row
-    ws.Columns(col).Insert(Shift=xlToRight)
-    formula = "=(%s-%s) * 24" % (cellStr(2, col - 1), cellStr(2, col - 1, 1, 1))
-    cells(2, col).Value = formula
-    fill_range = cellRangeStr(
-        (2, col), (end_row, col)
-    )
-
-    af_rng = cells.Range(fill_range)
-    cells(2, col).AutoFill(af_rng)
-
-    ws.Columns(col).NumberFormat = "0.00"
-
-
-def _insert_ln_col(ws, cells, col):
-    from officelib.xllib.xladdress import cellStr, cellRangeStr
-
-    end_row = cells(2, col - 1).End(xlDown).Row
-    ws.Columns(col).Insert(Shift=xlToRight)
-    formula = "=-LN(100-%s)" % cellStr(2, col - 1)
-    cells(2, col).Value = formula
-    fill_range = cellRangeStr(
-        (2, col), (end_row, col)
-    )
-
-    af_rng = cells.Range(fill_range)
-    cells(2, col).AutoFill(af_rng)
-
-    ws.Columns(col).NumberFormat = "0.00000"
-
-
 class _dbgmeta(type):
     def __new__(mcs, name, bases, kwargs):
         from types import FunctionType
@@ -304,7 +284,7 @@ class _dbgmeta(type):
 
 
 class KLAAnalyzer():
-    def __init__(self, files):
+    def __init__(self, files=()):
         self._files = files
         self._xl, self._wb, self._ws, self._cells = xlObjs()
         self._ws.Name = "Data"
@@ -329,26 +309,28 @@ class KLAAnalyzer():
                 print("Couldn't add trendlines")
 
     def close(self):
-        self._xl = self._wb = self._ws = self._cells = None
+        self._xl = self._wb = self._ws = self._cells = self._ln_chart = self._ln_chart = None
 
-    def analyze_file(self, file):
+    def analyze_file(self, file, name=''):
 
         # identifying name for chart/test/series
         file = file.replace("/", "\\")
         print("Analyzing file:", file[file.rfind("\\") + 1:])
-        try:
-            mode, ag, gas_flow = match(r"kla(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
-        except TypeError:
-            name = "KLA"
-        else:
-            if mode == '0':
-                unit = " RPM"
+
+        if not name:
+            try:
+                mode, ag, gas_flow = match(r"kla(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
+            except TypeError:
+                name = "KLA"
             else:
-                unit = "% Power"
-            name = "KLA %s%s %s mLPM" % (ag, unit, gas_flow)
+                if mode == '0':
+                    unit = " RPM"
+                else:
+                    unit = "% Power"
+                name = "KLA %s%s %s mLPM" % (ag, unit, gas_flow)
 
         print("Processing Worksheet.")
-        xl_name = self.process(file, name)
+        xl_name = self.process_csv(file, name)
         print("Adding data to compiled data set.")
         self.add_to_compiled(xl_name, name)
 
@@ -365,8 +347,8 @@ class KLAAnalyzer():
     def add_to_compiled(self, file, series_name):
         xl, wb, ws, cells = xlObjs(file, visible=False)
 
+        # copy data to new ws
         with HiddenXl(xl):
-            # copy data to new ws
             do_cell = cells.Find("DOPV(%)", cells(1, 1), SearchOrder=xlByRows)
             fleft = do_cell.Column
             fright = cells(2, fleft).End(xlToRight).Column
@@ -393,19 +375,20 @@ class KLAAnalyzer():
 
         self._current_col += fright - fleft + 2
 
-    def process(self, file, chart_name):
+    def process_csv(self, file, chart_name="KLA"):
         """
         Analyzing data is ugly. Analyze 'file', where 'file' is a csv file
-         corresponding to a batch report.
+         corresponding to a batch data report with KLA data.
         """
 
         xl, wb, ws, cells = xlObjs(file, visible=False)
         with HiddenXl(xl):
+            # XXX what if cell not found?
             do_cell = cells.Find(What="DOPV(%)", After=cells(1, 1), SearchOrder=xlByRows)
             xcol = do_cell.Column + 1
             end_row = do_cell.End(xlDown).Row
-            _insert_time_col(ws, cells, xcol)
-            _insert_ln_col(ws, cells, xcol + 2)
+            self._insert_time_col(ws, cells, xcol)
+            self._insert_ln_col(ws, cells, xcol + 2)
 
             # ln v time for specific chart
             xrng, yrng = chart_range_strs(xcol, xcol + 2, 2, end_row, ws.Name)
@@ -421,11 +404,40 @@ class KLAAnalyzer():
 
         return save_name
 
+    def _insert_ln_col(self, ws, cells, col):
+
+        end_row = cells(2, col - 1).End(xlDown).Row
+        ws.Columns(col).Insert(Shift=xlToRight)
+        formula = "=-LN(100-%s)" % cellStr(2, col - 1)
+        cells(2, col).Value = formula
+        fill_range = cellRangeStr(
+            (2, col), (end_row, col)
+        )
+
+        af_rng = cells.Range(fill_range)
+        cells(2, col).AutoFill(af_rng)
+
+        ws.Columns(col).NumberFormat = "0.00000"
+
+    def _insert_time_col(self, ws, cells, col):
+
+        end_row = cells(2, col - 1).End(xlDown).Row
+        ws.Columns(col).Insert(Shift=xlToRight)
+        formula = "=(%s-%s) * 24" % (cellStr(2, col - 1), cellStr(2, col - 1, 1, 1))
+        cells(2, col).Value = formula
+        fill_range = cellRangeStr(
+            (2, col), (end_row, col)
+        )
+
+        af_rng = cells.Range(fill_range)
+        cells(2, col).AutoFill(af_rng)
+
+        ws.Columns(col).NumberFormat = "0.00"
 
 
 def __test_analyze_kla():
     file = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\kla0-10-200 id-35 27-10-14.csv"
-    # analyze_kla(file)
+    KLAAnalyzer().process_csv(file)
 
 tka = __test_analyze_kla
 

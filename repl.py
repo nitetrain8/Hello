@@ -186,11 +186,12 @@ def overnight_startup_lowest():
     return p, p2
 
 
-def kla_overnight(app=None):
+def kla_overnight(app=None, exps=None, volume=2):
     from hello.kla import KLATest
     from hello import HelloApp
-    exps = [(0, sp, 200) for sp in range(10, 51, 10)]
-    exps.append((0, 20, 500))
+    if exps is None:
+        exps = [(0, sp, 200) for sp in range(10, 51, 10)]
+        exps.append((0, 20, 500))
 
     global kt, batches
 
@@ -211,7 +212,7 @@ def kla_overnight(app=None):
         app = HelloApp("192.168.1.6")
     kt = KLATest(app)
     try:
-        exps = kt.run_experiments(2, exps)
+        exps = kt.run_experiments(volume, exps)
     except:
         raise
     else:
@@ -242,12 +243,13 @@ def kla_overnight(app=None):
                 print("==========================================")
 
 
-def analyze_batches():
+def analyze_batches(files=None):
     import os
     from hello import kla
-    pth = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel"
-    files = ['\\'.join((pth, f)) for f in os.listdir(pth)]
-    files = [f for f in files if f.endswith('.csv') and 'kla' in f]
+    if files is None:
+        pth = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel"
+        files = ['\\'.join((pth, f)) for f in os.listdir(pth)]
+        files = [f for f in files if f.endswith('.csv') and 'kla' in f]
     analyzer = kla.KLAAnalyzer(files)
     try:
         analyzer.analyze_all()
@@ -259,4 +261,5 @@ if __name__ == '__main__':
     # app = HelloApp("192.168.1.6")
     # r = app.getdoravalues()
     # print(r)
-    analyze_batches()
+    files = kla_overnight(None, None, 3)
+    analyze_batches(files)

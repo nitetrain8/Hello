@@ -168,7 +168,6 @@ class HelloApp():
             try:
                 self._connection.request('GET', url, None, self.headers)
                 rsp = self._connection.getresponse()
-                return rsp
             except ConnectionAbortedError:
                 if nattempts > retrycount:
                     raise
@@ -177,6 +176,8 @@ class HelloApp():
                 print(traceback.format_exc())
                 if nattempts > retrycount:
                     raise
+            else:
+                return rsp
             nattempts += 1
             self.reconnect()
 
@@ -259,7 +260,7 @@ class HelloApp():
         try:
             id = xml.getbatchid(name)
         except KeyError:
-            raise HelloError("Bad batch name given- batch not found")
+            raise HelloError("Bad batch name given- batch not found") from None
         return self.getdatareport_bybatchid(id)
 
     def setdo(self, mode, n2, o2=0):
@@ -294,7 +295,7 @@ class HelloApp():
         # Get dora values ends up returning a blank element
         # for the name of the cluster, so the dict ends up
         # being {None: DoraValues}
-        return xml.getdata()[None]
+        return xml.data[None]
 
     def batchrunning(self):
         return self.getdoravalues()['Batch'] != '--'
@@ -312,7 +313,7 @@ class HelloApp():
     def getAdvancedValues(self):
         query = "?&call=getAdvancedValues"
         rsp = self.call_hello(query)
-        return HelloXML(rsp).getdata()['Advanced Values']
+        return HelloXML(rsp).data['Advanced Values']
 
     # backward compatibility
     getadvv = getAdvancedValues
@@ -368,7 +369,7 @@ class HelloApp():
     def getconfig(self):
         query = "?&call=getconfig"
         rsp = self.call_hello(query)
-        cfg = HelloXML(rsp).getdata()['System Variables']
+        cfg = HelloXML(rsp).data['System Variables']
         return cfg
 
     gpcfg = getconfig
@@ -398,6 +399,8 @@ class HelloXML():
 
         self._parse_types = self._parse_types
         self._parsed = False
+
+        # begin
         name, parsed = self.parse(root)
         self.parse_dict = {name: parsed}
         self.reply = parsed
@@ -405,17 +408,12 @@ class HelloXML():
         self.data = parsed['Message']
         self._parsed = True
 
+    # probably unnecessary: access self.data directly
     def getdata(self):
         if self._parsed:
             return self.data
         else:
             raise BadError("No data!")
-
-    def getresult(self):
-        if self._parsed:
-            return self.data
-        else:
-            raise BadError("No result!")
 
     def parse(self, e):
         name = e.tag
@@ -433,8 +431,7 @@ class HelloXML():
         rv = {}
         get_parser = self._parse_types.get
         for c in elems:
-            ctag = c.tag
-            parser = get_parser(ctag)
+            parser = get_parser(c.tag)
             if parser:
                 k, v = parser(c)
             else:
@@ -644,6 +641,7 @@ class BatchListXML():
 
 
 def __test1():
+    # noinspection PyUnusedLocal
     settings = (
         ("Agitation", "Minimum (RPM)", 3),
         ("Agitation", "Power Auto Max (%)", 100),
