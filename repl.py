@@ -191,7 +191,7 @@ def export(reports):
     path = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\"
     import datetime
 
-    now = datetime.datetime.now().strftime("%d-%m-%y")
+    now = datetime.datetime.now().strftime("%m-%d-%y")
     filenames = []
     for name, id, r in reports:
         filename = "%s%s id-%d %s.csv" % (path, name, id, now)
@@ -246,14 +246,14 @@ def kla_overnight(app=None, exps=None, volume=2):
                 print("==========================================")
 
 
-def analyze_batches(files=None):
+def analyze_batches(files=None, compiled_name="KLA Compiled Data"):
     import os
     from hello import kla
     pth = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel"
     if files is None:
         files = ['\\'.join((pth, f)) for f in os.listdir(pth)]
         files = [f for f in files if f.endswith('.csv') and 'kla' in f]
-    analyzer = kla.KLAAnalyzer(files, pth + "\\")
+    analyzer = kla.KLAAnalyzer(files, pth + "\\", compiled_name)
     try:
         analyzer.analyze_all()
     finally:
@@ -263,6 +263,17 @@ def analyze_batches(files=None):
 def kla2():
     files = kla_overnight(None, None, 3)
     analyze_batches(files)
+
+
+def kla3():
+    import pickle
+    import subprocess
+    subprocess.call("tskill.exe excel")
+    with open("C:\\.replcache\\klaall11314.pkl", 'rb') as f:
+        files2, files3 = pickle.load(f)
+
+    # analyze_batches(files2, "KLA %dL Compiled Data" % 2)
+    analyze_batches(files3, "KLA %dL Compiled Data" % 3)
 
 
 

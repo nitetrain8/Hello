@@ -11,7 +11,7 @@ from other modules/ipython sessions/etc.
 Maybe turn into __init__.py?
 """
 from collections import OrderedDict
-from http.client import HTTPConnection
+from http.client import HTTPConnection, BadStatusLine
 
 __author__ = 'Nathan Starkweather'
 
@@ -172,7 +172,7 @@ class HelloApp():
             try:
                 self._connection.request('GET', url, None, self.headers)
                 rsp = self._connection.getresponse()
-            except ConnectionAbortedError:
+            except (ConnectionAbortedError, BadStatusLine):
                 if nattempts > retrycount:
                     raise
             except Exception:

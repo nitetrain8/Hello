@@ -16,7 +16,7 @@ from os.path import split as path_split
 __author__ = 'Nathan Starkweather'
 
 
-from hello import HelloThing, HelloError, HelloApp, Logger
+from hello import HelloThing, HelloError, Logger
 from time import time as _time, sleep as _sleep
 
 
@@ -204,51 +204,48 @@ class KLATest(Logger, HelloThing):
         """
         app = self._app
         app.login()
+        time = _time
 
         self._log("Initializing Agitation with mode=%s sp=%s." % (ag_mode, ag_sp))
         app.setag(ag_mode, ag_sp)
 
         # if setpoint is auto mode, wait for pv to reach correct value
         if ag_mode == 0:
-            timeout = 10 * 60
-            end = _time() + timeout
-            log_time = _time() + 10
+            timeout = time() + 10 * 60
+            log_time = time() + 10
             while True:
                 pv = app.getagpv()
                 if ag_sp - 1 < pv < ag_sp + 1:
                     break
-                t = _time()
+                t = time()
                 if t > log_time:
                     log_time = int(t) + 10
                     self._log("Waiting for Agitation to reach setpoint. PV = %d." % app.getagpv())
-                _sleep(1)
-                if t > end:
+                if t > timeout:
                     raise KLAError("Agitation didn't reach setpoint.")
+                _sleep(1)
 
         app.setmg(1, flow_rate / 1000)
 
-        time = _time
-
-        start = time()
-        timeout = start + 14 * 60
-
         self._log("Beginning KLA Experiment.")
 
-        batch_name = "KLA%s-%s-%s-%s" % (ag_mode, volume, ag_sp, flow_rate)
+        batch_name = "kla%s-%s-%s-%s" % (ag_mode, volume, ag_sp, flow_rate)
 
         self._log("Starting new batch named '%s'." % batch_name)
         if app.batchrunning():
             app.endbatch()
         app.startbatch(batch_name)
 
-        log_time = time() + 10
+        start = time()
+        end = start + 14 * 60
+        log_time = start + 10
         while True:
             t = time()
             pv = app.getdopv()
             if t > log_time:
                 self._log("Test running, %d seconds passed. DO PV = %.1f." % (t - start, pv))
-                log_time = t + 10
-            if t > timeout:
+                log_time += 10
+            if t > end:
                 break
             if pv > 90:
                 break
@@ -290,7 +287,7 @@ class _dbgmeta(type):
 
 
 class KLAAnalyzer():
-    def __init__(self, files=(), path=''):
+    def __init__(self, files=(), path='', savename="Compiled KLA Data"):
         self._files = files
         self._xl, self._wb, self._ws, self._cells = xlObjs()
         self._ws.Name = "Data"
@@ -300,6 +297,7 @@ class KLAAnalyzer():
         self._ln_chart = None
         self._linear_chart = None
         self._current_col = 1
+        self._savename = savename
 
     def analyze_all(self):
         with HiddenXl(self._xl):
@@ -308,6 +306,7 @@ class KLAAnalyzer():
             for i, f in enumerate(self._files, 1):
                 print("Analyzing file #%d of %d" % (i, len(self._files)))
                 self.analyze_file(f)
+                print()
 
             self._linear_chart.Location(1, "Time v DOPV")
             self._ln_chart.Location(1, "Time v LN DOPV")
@@ -317,6 +316,11 @@ class KLAAnalyzer():
                     AddTrendlines(chart)
                 except:
                     print("Couldn't add trendlines")
+
+            self.save()
+
+    def save(self):
+        self._wb.SaveAs(self._path + self._savename, AddToMru=True)
 
     def close(self):
         self._xl.Visible = True
@@ -330,22 +334,17 @@ class KLAAnalyzer():
 
         if not name:
             try:
-                groups = match(r"kla(\d*)-(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
+                mode, volume, ag, gas_flow = match(r"kla(\d*)-(\d*)-(\d*)-(\d*)", path_split(file)[1]).groups()
             except AttributeError:
                 name = "KLA"
             else:
-                if len(groups) == 4:
-                    mode, volume, ag, gas_flow = groups
-                else:
-                    mode, ag, gas_flow = groups
-                    volume = 'unkn'
                 if mode == '0':
                     unit = " RPM"
                 else:
                     unit = "% Power"
                 name = "KLA %sL %s%s %s mLPM" % (volume, ag, unit, gas_flow)
 
-        print("Processing Worksheet.")
+        print("Processing file.")
         xl_name = self.process_csv(file, name)
         print("Adding data to compiled data set.")
         self.add_to_compiled(xl_name, name)
@@ -371,22 +370,27 @@ class KLAAnalyzer():
             fbottom = do_cell.End(xlDown).Row
 
             value = cells.Range(cells(1, fleft), cells(fbottom, fright)).Value
-            trng = self._cells.Range(self._cells(1, self._current_col),
-                                     self._cells(fbottom, self._current_col + fright - fleft))
+            trng = self._cells.Range(self._cells(2, self._current_col),
+                                     self._cells(fbottom + 1, self._current_col + fright - fleft))
             trng.Value = value
+
+            # column titles + identifying name
+            self._cells(1, self._current_col).Value = series_name
+            self._cells(2, self._current_col + 1).Value = "Elapsed Time"
+            self._cells(2, self._current_col + 3).Value = "-LN(100-DOPV)"
 
             # add LN chart
             if self._ln_chart is None:
                 self._init_ln_chart()
             chart = self._ln_chart
-            xrng, yrng = chart_range_strs(self._current_col, self._current_col + 1, 2, fbottom, self._ws.Name)
+            xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 3, 3, fbottom + 1, self._ws.Name)
             CreateDataSeries(chart, xrng, yrng, series_name)
 
             # add linear chart
             if self._linear_chart is None:
                 self._init_linear_chart()
             chart = self._linear_chart
-            xrng, yrng = chart_range_strs(self._current_col, self._current_col + 2, 2, fbottom, self._ws.Name)
+            xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 2, 3, fbottom + 1, self._ws.Name)
             CreateDataSeries(chart, xrng, yrng, series_name)
 
         self._current_col += fright - fleft + 2
@@ -396,16 +400,18 @@ class KLAAnalyzer():
         Analyzing data is ugly. Analyze 'file', where 'file' is a csv file
          corresponding to a batch data report with KLA data.
         """
-
+        print("Opening new worksheet")
         xl, wb, ws, cells = xlObjs(file, visible=False)
         with HiddenXl(xl):
             # XXX what if cell not found?
             do_cell = cells.Find(What="DOPV(%)", After=cells(1, 1), SearchOrder=xlByRows)
             xcol = do_cell.Column + 1
             end_row = do_cell.End(xlDown).Row
+            print("Performing data analysis")
             self._insert_time_col(ws, cells, xcol)
             self._insert_ln_col(ws, cells, xcol + 2)
 
+            print("Creating data plot")
             # ln v time for specific chart
             xrng, yrng = chart_range_strs(xcol, xcol + 2, 2, end_row, ws.Name)
             chart = CreateChart(ws, xlXYScatterLines)
@@ -452,7 +458,9 @@ class KLAAnalyzer():
 
 
 def __test_analyze_kla():
-    file = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\kla0-10-200 id-35 27-10-14.csv"
+
+    test_dir = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\test\\"
+    file = test_dir + "kla0-10-200 id-35 27-10-14.csv"
     KLAAnalyzer((file,)).analyze_all()
 
 tka = __test_analyze_kla
