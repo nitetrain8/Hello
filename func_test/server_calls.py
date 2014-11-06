@@ -84,6 +84,15 @@ class TestServerCalls(unittest.TestCase):
         cls.logged_in = False
         cls.calls_seen = set()
 
+    @classmethod
+    def tearDownClass(cls):
+        diff = cls._all_server_calls - cls.calls_seen
+        if diff:
+            print()
+            print("Warning, calls untested:")
+            for d in diff:
+                print(d)
+
     def _validate_xml_get(self, call, rsp):
         if call == 'getBatches':
             parser = BatchListXML
@@ -93,23 +102,32 @@ class TestServerCalls(unittest.TestCase):
         xml = parser(rsp)
         result = xml.result
         msg = xml.data
-        self.assertEqual(result, 'True')
+        if result.lower() != 'true':
+            raise self.failureException(msg)
         self.assertNotEqual(msg, 'True')
 
     def _validate_json_get(self, rsp):
-        json = json_loads(rsp.read())
-        reply = json['Reply']
-        result = reply['Result']
-        msg = reply['Message']
-        self.assertEqual(result, 'True')
-        self.assertNotEqual(msg, 'True')
+        txt = rsp.read().decode("utf-8")
+        json = json_loads(txt)
+        try:
+            result = json['Result']
+        except KeyError:
+            result = "True"
+
+        msg = json['message']
+
+        if result != "True":
+            raise self.failureException(msg)
+        self.assertNotEqual(msg, 'true')
 
     def _validate_set(self, rsp):
 
         xml = HelloXML(rsp)
         result = xml.result
         msg = xml.message
-        self.assertEqual(result, 'True')
+        if result != "True":
+            raise self.failureException(msg)
+
         self.assertEqual(msg, 'True')
 
     def login(self, force=False):
@@ -140,12 +158,12 @@ class TestServerCalls(unittest.TestCase):
         self.calls_seen.add(call)
         self._validate_set(rsp)
 
-    def test_getVersions(self):
+    def test_getVersion(self):
         """
         @return: None
         @rtype: None
         """
-        self.do_get_call('getVersions')
+        self.do_get_call('getVersion')
 
     def test_getMainInfo(self):
         self.do_get_call('getMainInfo')
@@ -190,13 +208,13 @@ class TestServerCalls(unittest.TestCase):
         self.do_set_call('logout')
 
     def test_getMainValues(self):
-        self.do_get_call('getMainValues', ('json', 'true'), 'json')
+        self.do_get_call('getMainValues', (('json', 'True'),), 'json')
 
     def test_getUnAckCount(self):
         self.do_get_call('getUnAckCount')
 
     def test_getLoginStatus(self):
-        self.do_get_call("getLoginStatus", ("Loader", 'Verifying...'))
+        self.do_get_call("getLoginStatus", (("Loader", 'Verifying...'),))
 
     def test_getUserInfo(self):
         self.do_get_call("getUserInfo", (), 'xml', True)
@@ -232,7 +250,7 @@ class TestServerCalls(unittest.TestCase):
         args = (
             ('mode', 'first'),
             ('val1', '100'),
-            ('val2', 1),
+            ('val2', '1'),
             ('loader', 'Loading+alarms...')
         )
         self.do_get_call('getAlarms', args)
@@ -249,19 +267,26 @@ class TestServerCalls(unittest.TestCase):
             raise SkipTest("No alarms, can't test")
 
         with self.subTest("Testing clearAlarm", val1=alarm):
-            self.do_set_call('clearAlarm', ('val1', alarm))
+            self.do_set_call('clearAlarm', (('val1', alarm),))
 
         with self.subTest("Testing clearAlarmsByType", val1=typ):
-            self.do_set_call("clearAlarmsByType", ('val1', typ))
+            self.do_set_call("clearAlarmsByType", (('val1', typ),))
 
         with self.subTest("Testing clearAllAlarms"):
-            raise SkipTest("Do this manually")
+            # do this manually
+            pass
 
     def test_revertTrialCal(self):
-        self.do_set_call('revertTrialCal')
+        sensors = "pha", "phb", "doa", "dob", "level", "pressure"
+        for s in sensors:
+            with self.subTest("revertTrialCal", sensor=s):
+                self.do_set_call('revertTrialCal', (('sensor', s),))
 
     def test_getRawValue(self):
-        self.do_set_call("getRawValue")
+        sensors = "pha", "phb", "doa", "dob", "level", "pressure"
+        for s in sensors:
+            with self.subTest("getRawValue", sensor=s):
+                self.do_get_call('getRawValue', (('sensor', s),))
 
     @unittest.skip("Not Implemented")
     def test_Calibration(self):
@@ -269,8 +294,8 @@ class TestServerCalls(unittest.TestCase):
 
     def test_AutoPilot(self):
         with self.subTest('getRecipes'):
-            rsp = self.app.call_hello_from_args2("getRecipes", ("loader", "Loading+recipes"))
-            txt = rsp.read()
+            rsp = self.app.call_hello_from_args2("getRecipes", (("loader", "Loading+recipes"),))
+            txt = rsp.read().decode('utf-8')
             self._validate_xml_get('getRecipes', txt)
 
         xml = HelloXML(txt)
@@ -296,22 +321,20 @@ class TestServerCalls(unittest.TestCase):
             self.do_get_call("getRecipeStep")
 
         with self.subTest("getRecipeItems"):
-            self.do_get_call("getRecipeItems", ("recipe", r))
+            self.do_get_call("getRecipeItems", (("recipe", r),))
 
         with self.subTest('recipeSkip'):
             args = (
                 ("val1", 'sequence'),
                 ("recipe", r)
             )
-            if not self.app.reciperunning():
-                raise SkipTest("Recipe not running")
             self.do_set_call("recipeSkip", args)
 
     def test_getBatches(self):
-        self.do_get_call("getBatches", ("loader", "Loading+batches..."))
+        self.do_get_call("getBatches", (("loader", "Loading+batches..."),))
 
     def test_getReport(self):
-        self.do_get_call("getReportTypes", ("loader", "Loading+reports..."))
+        self.do_get_call("getReportTypes", (("loader", "Loading+reports..."),))
 
     def test_getReportByType(self):
         batches = self.app.getbatches(True)
@@ -385,8 +408,8 @@ class TestServerCalls(unittest.TestCase):
 
     def test_setpumpsample(self):
         args = (
-            ("val1", 1),
-            ("val2", 0)
+            ("val1", "1"),
+            ("val2", "0")
         )
         self.do_set_call('setpumpsample', args)
 
@@ -473,25 +496,20 @@ class TestServerCalls(unittest.TestCase):
         self.do_set_call('setSensorState', args)
 
 
-
-
-
-
         # auto generate tests
-for addy in ipaddys:
-    src = """
-class TestServerCalls_ip%(ip)s(TestServerCalls):
-    ipaddy = '%(ip)s'
-    """ % {'ip': addy.replace('.', '_').replace(':', '_')}
-    exec(src)
+if len(ipaddys) > 1:
+    for addy in ipaddys:
+        src = """
+    class TestServerCalls_ip%(ip)s(TestServerCalls):
+        ipaddy = '%(ip2)s'
+        """ % {'ip': addy.replace('.', '_').replace(':', '_'),
+                'ip2': addy}
+        exec(src)
 
-# don't actually run the template base class.
-del TestServerCalls
-
-
-def test_all_server_calls(ipv4):
-    app = HelloApp(ipv4)
-
+    # don't actually run the template base class.
+    del TestServerCalls
+else:
+    TestServerCalls.ipaddy = ipaddys[0]
 
 if __name__ == '__main__':
     unittest.main()

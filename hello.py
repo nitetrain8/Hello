@@ -156,7 +156,7 @@ class HelloApp():
         """
         same as below, but 'call' is a separate argument
         """
-        query = call.join(("?&call=", "&".join("=".join(a) for a in args)))
+        query = ''.join(("?&call=", call, "&", "&".join("=".join(a) for a in args)))
         return self.call_hello(query)
 
     def call_hello_from_args(self, args):
@@ -189,6 +189,7 @@ class HelloApp():
                 import traceback
                 print("=====================================")
                 print("UNKNOWN ERROR OCCURRED DURING REQUEST")
+                print("IPV4 ADDRESS:", self._ipv4)
                 print("REQUESTED URL: <%s>" % url)
                 print("=====================================")
                 print(traceback.format_exc())
@@ -566,12 +567,14 @@ class BatchEntry():
         self.name = name
         self.serial_number = serial_number
         self.user = user
+
         self.start_time = int(start_time)
         stop_time = int(stop_time or time())
         if stop_time - self.start_time < 0:
             stop_time = 2**31 - 1  # epoch
         self.stop_time = stop_time
-        self.product_number = int(product_number)
+
+        self.product_number = product_number
         self.rev = rev
 
     def __getitem__(self, item):
@@ -609,27 +612,31 @@ class BatchListXML():
         self.reply = parsed
         self.result = parsed['Result']
 
-        ids_to_batches = parsed['Message']['Batches (cluster)']
+        if self.result == 'True':
+            ids_to_batches = parsed['Message']['Batches (cluster)']
 
-        # map names <-> ids
-        # note that many batches may have the same
-        # newer names are overridden with older names,
-        # where 'newer' means 'higher id'
-        names_to_batches = {}
-        for entry in ids_to_batches.values():
-            entry_copy = entry.copy()
-            name = entry_copy["Name"]
-            id = entry_copy['ID']
-            if name in names_to_batches:
-                if id > names_to_batches[name]['ID']:
+            # map names <-> ids
+            # note that many batches may have the same
+            # newer names are overridden with older names,
+            # where 'newer' means 'higher id'
+            names_to_batches = {}
+            for entry in ids_to_batches.values():
+                entry_copy = entry.copy()
+                name = entry_copy["Name"]
+                id = entry_copy['ID']
+                if name in names_to_batches:
+                    if id > names_to_batches[name]['ID']:
+                        names_to_batches[name] = entry_copy
+                else:
                     names_to_batches[name] = entry_copy
-            else:
-                names_to_batches[name] = entry_copy
 
-        self.names_to_batches = names_to_batches
-        self.ids_to_batches = OrderedDict(sorted(ids_to_batches.items()))
+            self.names_to_batches = names_to_batches
+            self.ids_to_batches = self.data = OrderedDict(sorted(ids_to_batches.items()))
 
-        self._parsed = True
+            self._parsed = True
+        else:
+            print(parsed['Message'])
+            self.names_to_batches = self.ids_to_batches = self.data = None
 
     def getdata(self):
         if self._parsed:
