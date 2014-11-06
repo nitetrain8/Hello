@@ -18,6 +18,7 @@ __author__ = 'Nathan Starkweather'
 from xml.etree.ElementTree import XML as parse_xml, ElementTree
 from json import loads as json_loads
 from re import compile as re_compile
+from time import time
 
 
 class BadError(Exception):
@@ -151,6 +152,13 @@ class HelloApp():
         self._host, self._port = self._parse_ipv4(ipv4)
         self._connection = self._init_connection(self._host, self._port)
 
+    def call_hello_from_args2(self, call, args=()):
+        """
+        same as below, but 'call' is a separate argument
+        """
+        query = call.join(("?&call=", "&".join("=".join(a) for a in args)))
+        return self.call_hello(query)
+
     def call_hello_from_args(self, args):
         """
         @param args: tuple of (key, value) pairs to build a query string
@@ -214,6 +222,11 @@ class HelloApp():
         rsp = self.call_hello(query)
         return self._do_set_validate(rsp)
 
+    def logout(self):
+        query = "?&call=logout"
+        rsp = self.call_hello(query)
+        return self._do_set_validate(rsp)
+
     def _do_set_validate(self, rsp):
         root = self._parse_xml(rsp)
         msg = root[1]
@@ -230,6 +243,18 @@ class HelloApp():
         query = "?&call=setendbatch"
         rsp = self.call_hello(query)
         return self._do_set_validate(rsp)
+
+    def getAlarms(self, mode='first', val1='100', val2='1', loader="Loading+alarms..."):
+
+        if loader:
+            query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s&loader=%s" % (mode, val1, val2, loader)
+        else:
+            query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
+        rsp = self.call_hello(query)
+        xml = HelloXML(rsp)
+        if xml.result == "True":
+            return xml.data['Alarms']
+        return xml.data
 
     def getreport(self, mode, type, val1, val2='', timeout=120000):
         """
@@ -305,10 +330,27 @@ class HelloApp():
         # Get dora values ends up returning a blank element
         # for the name of the cluster, so the dict ends up
         # being {None: DoraValues}
-        return xml.data[None]
+        if xml.result == 'True':
+            return xml.data[None]
+        return xml.result
 
     def batchrunning(self):
-        return self.getdoravalues()['Batch'] != '--'
+        try:
+            return self.getdoravalues()['Batch'] != '--'
+        except TypeError:
+            return False
+
+    def reciperunning(self):
+        try:
+            return self.getdoravalues()['Sequence'] != 'Idle'
+        except TypeError:
+            return False
+
+    def reactorname(self):
+        try:
+            return self.getdoravalues()['Machine Name']
+        except TypeError:
+            return False
 
     def getMainValues(self):
         query = "?&call=getMainValues&json=true"
@@ -345,6 +387,14 @@ class HelloApp():
 
         return self.call_hello(query)
 
+    def getVersion(self):
+        query = "?&call=getVersion"
+        rsp = self.call_hello(query)
+        return HelloXML(rsp).data['Versions']
+
+    def getsize(self):
+        return int(self.getVersion()['Model'][4:])
+
     # Convenience functions
 
     def getdopv(self):
@@ -374,8 +424,6 @@ class HelloApp():
         temp = self.gpmv()['temperature']
         return temp['pv']['man']
 
-    # config
-
     def getconfig(self):
         query = "?&call=getconfig"
         rsp = self.call_hello(query)
@@ -383,6 +431,16 @@ class HelloApp():
         return cfg
 
     gpcfg = getconfig
+
+    # recipes
+
+    def getRecipes(self, loader="Loading+recipes"):
+        query = "?&call=getRecipes&loader=" + loader
+        rsp = self.call_hello(query)
+        xml = HelloXML(rsp)
+        if xml.result == 'True':
+            return xml.data.split(",")
+        return xml.data
 
     def __repr__(self):
         base = super().__repr__()
@@ -392,8 +450,6 @@ class HelloApp():
 
 
 def _fast_parse_message(xml_string):
-    # quickly parse the contents of a xml string known to only
-    # contain interesting data in the "message" field
     xml = parse_xml(xml_string)
     return xml[1].text
 
@@ -415,7 +471,7 @@ class HelloXML():
         self.parse_dict = {name: parsed}
         self.reply = parsed
         self.result = parsed['Result']
-        self.data = parsed['Message']
+        self.data = self.message = parsed['Message']
         self._parsed = True
 
     # probably unnecessary: access self.data directly
@@ -458,6 +514,12 @@ class HelloXML():
         val = int(val)
         return name, val
 
+    def parse_bool(self, e):
+        name = e[0].text
+        val = e[1].text
+        val = bool(val)
+        return name, val
+
     def parse_string(self, e):
         name = e[0].text
         val = e[1].text
@@ -482,7 +544,8 @@ class HelloXML():
         'U16': parse_int,
         'U8': parse_int,
         'Cluster': parse_cluster,
-        'String': parse_string
+        'String': parse_string,
+        'Boolean': parse_bool
     }
 
 
@@ -503,9 +566,12 @@ class BatchEntry():
         self.name = name
         self.serial_number = serial_number
         self.user = user
-        self.start_time = start_time
+        self.start_time = int(start_time)
+        stop_time = int(stop_time or time())
+        if stop_time - self.start_time < 0:
+            stop_time = 2**31 - 1  # epoch
         self.stop_time = stop_time
-        self.product_number = product_number
+        self.product_number = int(product_number)
         self.rev = rev
 
     def __getitem__(self, item):
@@ -644,6 +710,12 @@ class BatchListXML():
         name = val['ID']
         return name, val
 
+    def parse_bool(self, e):
+        name = e[0].text
+        val = e[1].text
+        val = bool(val)
+        return name, val
+
     _parse_types = {
         'DBL': parse_float,
         'I32': parse_int,
@@ -652,7 +724,8 @@ class BatchListXML():
         'U8': parse_int,
         'Cluster': parse_cluster,
         'String': parse_string,
-        'Array': parse_array
+        'Array': parse_array,
+        'Boolean': parse_bool
     }
 
 

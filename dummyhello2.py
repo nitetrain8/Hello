@@ -6,14 +6,15 @@ Created in: PyCharm Community Edition
 
 
 """
+import threading
+from traceback import print_exc
 
 __author__ = 'Nathan Starkweather'
 
 from xml.etree.ElementTree import parse as xml_parse
 from urllib.request import urlopen
 from urllib.error import URLError
-from http.client import HTTPException
-from socket import timeout
+from queue import Queue, Empty
 from io import BytesIO
 from collections import OrderedDict
 
@@ -34,6 +35,17 @@ def xml_parse_call(txt):
     return root
 
 
+def sendroutine(f):
+    from functools import wraps
+
+    @wraps
+    def wrapper(*args, **kwargs):
+        g = f(*args, **kwargs)
+        next(g)
+        return g.send
+    return wrapper
+
+
 def getMainValues(urlbase):
     url = urlbase + "call=getMainValues"
     txt = call_hello(url)
@@ -46,6 +58,7 @@ def getAdvancedValues(urlbase):
     return xml_parse_call(txt)
 
 
+# noinspection PyAttributeOutsideInit
 class Hello():
     def __init__(self, ipv4=ipv4def):
         self.url_base = "http://{ipv4}/webservice/interface/?&".format(ipv4=ipv4)
@@ -152,17 +165,28 @@ class Hello():
             ("SH Setpoint A", 0))
         )
 
+        self.mv_cont = mvc = {}
+        self.av_cont = avc = {}
+
+        for k1, v1 in self.main_values.items():
+            mvc[k1] = mvcv1 = {}
+            for k2, v2 in v1.items():
+                mvcv1[k2] = v2
+
+        for k, v in self.adv_values.items():
+            avc[k] = v
+
         self.main_values.move_to_end("SecondaryHeat")
         self.adv_values.move_to_end("SH Duty", False)
 
     def getMainValues(self):
-        return getMainValues(self.url_base)
+        return self.get_mainvalues()
 
     def getAdvancedValues(self):
-        return getAdvancedValues(self.url_base)
+        return self.get_advvalues()
 
     def setup(self):
-        from tkinter import Tk, N, W, StringVar
+        from tkinter import Tk, N, StringVar
         from tkinter.ttk import LabelFrame, Label
 
         root = Tk()
@@ -217,60 +241,147 @@ class Hello():
         self.labels = labels
         self.vars = vars
 
+        # Initialize threading model for polling updates
+        # From server
+        self.mvqueue = Queue(1)
+        self.avqueue = Queue(1)
+
+        self.mv_stop = threading.Event()
+        self.av_stop = threading.Event()
+
+        self.mvthread = threading.Thread(None, self.do_mainvalues, None,
+                                         (self.mvqueue, self.url_base, self.mv_stop))
+        self.avthread = threading.Thread(None, self.do_advvalues, None,
+                                         (self.avqueue, self.url_base, self.av_stop))
+
+        self.mvthread.daemon = True
+        self.avthread.daemon = True
+
+        self.mvthread.start()
+        self.avthread.start()
+
     def mainloop(self):
         self.setup()
         self.root.after(250, self.poll)
-        # self.mframe.configure(text="MV: 0, AV: 0")
         self.root.mainloop()
 
     def poll(self):
 
+        update = False
         try:
             root = self.getMainValues()
-            self.parse_main_values2(root)
-        except Exception as e:
-            print("Error updating Main Values:", e)
+            if root:
+                self.parse_main_values2(root)
+                self.mvhb += 1
+                update = True
+            else:
+                if root is not None:
+                    raise Exception("unknown exception")
+        except Exception:
+            print("Error updating Main Values")
+            print_exc()
             self.mvbad += 1
-            self.update(False)
-        else:
-            self.mvhb += 1
-            self.update(True)
-
-        # sleep(.25)
 
         try:
             root = self.getAdvancedValues()
-            self.parse_adv_values2(root)
-        except Exception as e:
-            print("Error updating Advanced Values:", e)
+            if root:
+                self.parse_adv_values2(root)
+                self.avhb += 1
+                update = True
+            else:
+                if root is not None:
+                    raise Exception("unknown exception")
+        except Exception:
+            print("Error updating Advanced Values")
+            print_exc()
             self.avbad += 1
-            self.update(False)
-        else:
-            self.avhb += 1
-            self.update(True)
 
+        self.root.after(250, self.update, update)
         self.root.after(500, self.poll)
+
+    def do_mainvalues(self, q, urlbase, running_flag):
+        """
+        @type q: Queue
+        @return:
+        """
+        stopped = running_flag.is_set
+
+        while not stopped():
+            q.join()
+            try:
+                values = getMainValues(urlbase)
+                q.put(values)
+            except (OSError, URLError):  # socket errors
+                pass
+            except (OSError, URLError):
+                pass
+            except Exception as e:
+                print("==========================")
+                print("Error in AV thread", e)
+                print("==========================")
+                q.put(False)
+
+    def get_mainvalues(self):
+        try:
+            rv = self.mvqueue.get(False)
+        except Empty:
+            rv = None
+        else:
+            self.mvqueue.task_done()
+        return rv
+
+    def do_advvalues(self, q, urlbase, running_flag):
+        """
+        @type q: Queue
+        @return:
+        """
+        stopped = running_flag.is_set
+        while not stopped():
+            q.join()
+            try:
+                values = getAdvancedValues(urlbase)
+                q.put(values)
+            except (OSError, URLError):
+                pass
+            except Exception:
+                print("==========================")
+                print("Error in AV thread")
+                print("==========================")
+                q.put(False)
+
+    def get_advvalues(self):
+        try:
+            rv = self.avqueue.get(False)
+        except Empty:
+            rv = None
+        else:
+            self.avqueue.task_done()
+        return rv
 
     def update(self, update_widgets=True):
 
         if update_widgets:
-            self.root.after(50, self._update)
+            vars = self.vars
+            mvc = self.mv_cont
+            for group, params in self.main_values.items():
+                vgroup = vars[group]
+                mvg = mvc[group]
+                for k, v in params.items():
+                    if mvg[k] != v:
+                        mvg[k] = v
+                        vgroup[k][1].set(v)
+
+            avvars = vars['Adv']
+            avc = self.av_cont
+            for k, v in self.adv_values.items():
+                if avc[k] != v:
+                    avc[k] = v
+                    avvars[k][1].set(v)
 
         self.mframe.configure(text="MV: %d-%d, AV: %d-%d" % (self.mvhb,
                                                              self.mvbad,
                                                              self.avhb,
                                                              self.avbad))
-
-    def _update(self):
-        vars = self.vars
-        for group, params in self.main_values.items():
-            vgroup = vars[group]
-            for k, v in params.items():
-                vgroup[k][1].set(v)
-
-        avvars = vars['Adv']
-        for k, v in self.adv_values.items():
-            avvars[k][1].set(v)
 
     def parse_adv_values2(self, root):
         cluster = root[1][0]
@@ -314,5 +425,7 @@ if __name__ == '__main__':
         else:
             print(elem, elem.text)
 
-    ipv4 = '192.168.1.3'
-    Hello(ipv4).mainloop()
+    ipv4 = '192.168.1.4'
+    h = Hello(ipv4)
+    h.mainloop()
+    print(h.mvqueue.unfinished_tasks)

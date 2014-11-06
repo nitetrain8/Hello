@@ -282,6 +282,6 @@ if __name__ == '__main__':
     # app = HelloApp("192.168.1.6")
     # r = app.getdoravalues()
     # print(r)
-    import hello.kla
-    hello.kla.__test_analyze_kla()
+    pass
+
 
