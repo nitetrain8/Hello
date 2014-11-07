@@ -25,17 +25,13 @@ if not ipaddys:
 
 class TestServerCalls(unittest.TestCase):
 
-    ipaddy = '192.168.1.6'
-    logged_in = False
-    
     _all_server_calls = {
+        "login",
         "getVersions",
         "getMainInfo",
         "getTrendData",
         "getAlarmList",
         "getUsers",
-        "login",
-        "logout",
         "getMainValues",
         "getUnAckCount",
         "getLoginStatus",
@@ -75,13 +71,17 @@ class TestServerCalls(unittest.TestCase):
         "setSensorState",
         "set",
         "getRecipes",
-        "shutdown"
+        "shutdown",
+        "logout"
     }
+    ipaddy = '192.168.1.6'
+    logged_in = False
+    calls_seen = None
 
     @classmethod
     def setUpClass(cls):
         cls.app = HelloApp(cls.ipaddy)
-        cls.logged_in = False
+        cls.app.logged_in = False
         cls.calls_seen = set()
 
     @classmethod
@@ -124,22 +124,21 @@ class TestServerCalls(unittest.TestCase):
 
         xml = HelloXML(rsp)
         result = xml.result
-        msg = xml.message
+        msg = xml.msg
         if result != "True":
             raise self.failureException(msg)
-
         self.assertEqual(msg, 'True')
 
     def login(self, force=False):
 
         if not self.logged_in or force:
             self.app.login()
-            self.logged_in = True
+            self.app.logged_in = True
 
     def logout(self, force=False):
         if self.logged_in or force:
             self.app.logout()
-            self.logged_in = False
+            self.app.logged_in = False
 
     def do_get_call(self, call, args=(), rtype='xml', needlogin=False):
         if not self.logged_in and needlogin:
@@ -194,7 +193,10 @@ class TestServerCalls(unittest.TestCase):
     def test_getUsers(self):
         self.do_get_call('getUsers')
 
-    def test_login(self):
+    # prefix login and logout methods so that they are sorted
+    # to be the first and last tests run, respectively.
+
+    def test_AA_login(self):
 
         args = (
             ('val1', 'user1'),
@@ -203,8 +205,9 @@ class TestServerCalls(unittest.TestCase):
             ("skipValidate", "true")
         )
         self.do_set_call('login', args, False)
+        self.logged_in = True
 
-    def test_logout(self):
+    def test_zz_logout(self):
         self.do_set_call('logout')
 
     def test_getMainValues(self):
@@ -229,7 +232,26 @@ class TestServerCalls(unittest.TestCase):
         self.do_set_call("setTopLight")
 
     def test_setUnlockDoor(self):
-        self.do_set_call("setUnlockDoor")
+        # this will cause a failure if the door is
+        # interlocked but call works todo- find a way around this
+
+        # inline do_set_call
+        if not self.logged_in:
+            self.login(True)
+        rsp = self.app.call_hello_from_args2('setUnlockDoor')
+        self.calls_seen.add('setUnlockDoor')
+
+        # inline validate_set
+        xml = HelloXML(rsp)
+        result = xml.result
+        msg = xml.msg
+        if result != "True":
+            if "Interlock" in msg and msg.endswith("7402"):
+                pass
+            else:
+                raise self.failureException(msg)
+        else:
+            self.assertEqual(msg, 'True')
 
     def test_getAdvancedValues(self):
         self.do_get_call("getAdvancedValues")
@@ -290,7 +312,8 @@ class TestServerCalls(unittest.TestCase):
 
     @unittest.skip("Not Implemented")
     def test_Calibration(self):
-        pass
+        # Try a simple one-point DO calibration
+        rawvalue = self.app.getRawValue('doa')
 
     def test_AutoPilot(self):
         with self.subTest('getRecipes'):
@@ -337,7 +360,7 @@ class TestServerCalls(unittest.TestCase):
         self.do_get_call("getReportTypes", (("loader", "Loading+reports..."),))
 
     def test_getReportByType(self):
-        batches = self.app.getbatches(True)
+        batches = self.app.getbatches()
         if len(batches.names_to_batches) == 0:
             raise SkipTest("No Batches")
 
@@ -374,7 +397,7 @@ class TestServerCalls(unittest.TestCase):
         self.do_get_call("getPumps")
 
     def test_setpumps(self):
-        size = self.app.getsize()
+        size = self.app.getmodelsize()
         if size < 80:
             a_speed = 2
         else:
@@ -499,9 +522,11 @@ class TestServerCalls(unittest.TestCase):
         # auto generate tests
 if len(ipaddys) > 1:
     for addy in ipaddys:
+        if not addy.strip():
+            continue
         src = """
-    class TestServerCalls_ip%(ip)s(TestServerCalls):
-        ipaddy = '%(ip2)s'
+class TestServerCalls_ip%(ip)s(TestServerCalls):
+    ipaddy = '%(ip2)s'
         """ % {'ip': addy.replace('.', '_').replace(':', '_'),
                 'ip2': addy}
         exec(src)

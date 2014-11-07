@@ -15,7 +15,7 @@ from http.client import HTTPConnection, BadStatusLine
 
 __author__ = 'Nathan Starkweather'
 
-from xml.etree.ElementTree import XML as parse_xml, ElementTree
+from xml.etree.ElementTree import XMLParser, XML as parse_xml
 from json import loads as json_loads
 from re import compile as re_compile
 from time import time
@@ -31,7 +31,11 @@ class HelloError(BadError):
     pass
 
 
-class AuthError(HelloError):
+class ServerCallError(HelloError):
+    pass
+
+
+class AuthError(ServerCallError):
     """ Authentication Error. Most likely due to
     failure to properly maintain state across multiple
     server calls.
@@ -66,6 +70,24 @@ def sanitize_url(url, cb=_sanitize_cb):
     return _sanitize(cb, url)
 
 
+# noinspection PyProtectedMember, PyUnusedLocal
+def parse_rsp(rsp):
+    parser = XMLParser()
+    if hasattr(parser, '_parse_whole'):
+        # The default XMLParser, when it comes from an accelerator,
+        # can define an internal _parse_whole API for efficiency.
+        # It can be used to parse the whole source without feeding
+        # it with chunks.
+        return parser._parse_whole(rsp)
+
+    while True:
+        data = rsp.read(65536)
+        if not data:
+            break
+        parser.feed(data)
+    return parser.close()
+
+
 class HelloApp():
 
     _headers = {}
@@ -83,8 +105,7 @@ class HelloApp():
         if headers is not None:
             self.headers.update(headers)
 
-        self._tree = ElementTree()
-        self._parse_xml = self._tree.parse
+        self._parse_rsp = parse_rsp
 
     def _parse_ipv4(self, ipv4):
         """
@@ -213,9 +234,9 @@ class HelloApp():
         url = self._urlbase + query
         rsp = self._do_request(url)
 
-        for h, v in rsp.getheaders():
-            if h == 'Set-Cookie':
-                self.headers['Cookie'] = v.split(';', 1)[0]
+        cookie = rsp.headers.get("Set-Cookie")
+        if cookie:
+            self.headers['Cookie'] = cookie.split(';', 1)[0]
         return rsp
 
     def login(self, user='user1', pwd='12345'):
@@ -229,10 +250,11 @@ class HelloApp():
         return self._do_set_validate(rsp)
 
     def _do_set_validate(self, rsp):
-        root = self._parse_xml(rsp)
-        msg = root[1]
-        if msg.text != "True":
-            raise AuthError(msg.text)
+        # this is faster than calling HelloXML instance
+        root = self._parse_rsp(rsp)
+        result = root[0]
+        if not result.text == "True":
+            raise ServerCallError(root[1].text)
         return True
 
     def startbatch(self, name):
@@ -253,11 +275,11 @@ class HelloApp():
             query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
         rsp = self.call_hello(query)
         xml = HelloXML(rsp)
-        if xml.result == "True":
-            return xml.data['Alarms']
-        return xml.data
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+        return xml.data['Alarms']
 
-    def getreport(self, mode, type, val1, val2='', timeout=120000):
+    def getReport(self, mode, type, val1, val2='', timeout=120000):
         """
         @param mode: 'byBatch' or 'byDate'
         @param type: data, recipe steps, errors, or user events
@@ -268,23 +290,24 @@ class HelloApp():
         # not sure what timeout does
         query = "?&call=getReport&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
                 (mode, type, val1, val2, timeout)
-        return self.call_hello(query)
+        rsp = self.call_hello(query)
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.data)
+        return xml.data
 
-    def getbatches(self, raw=False):
+    def getbatches(self):
         query = "?&call=getBatches&loader=Loading+batches..."
         rsp = self.call_hello(query)
         xml = BatchListXML(rsp)
-        if raw:
-            return xml
-        return xml.ids_to_batches
+        if not xml.result:
+            raise ServerCallError
 
     def getreport_byname(self, type, val1):
-        return self.getreport('byBatch', type, val1)
+        return self.getReport('byBatch', type, val1)
 
     def getdatareport_bybatchid(self, val1):
-        rsp = self.getreport('byBatch', 'Data', val1)
-        txt = rsp.read().decode('utf-8')
-        fname = _fast_parse_message(txt)
+        fname = self.getReport('byBatch', 'Data', val1)
         url = "/reports/" + fname
         rsp2 = self._do_request(url)
         return rsp2.read()
@@ -296,7 +319,7 @@ class HelloApp():
         try:
             id = xml.getbatchid(name)
         except KeyError:
-            raise HelloError("Bad batch name given- batch not found") from None
+            raise HelloError("Bad batch name given- batch not found: " + name) from None
         return self.getdatareport_bybatchid(id)
 
     def setdo(self, mode, n2, o2=0):
@@ -312,8 +335,6 @@ class HelloApp():
         return self._do_set_validate(rsp)
 
     def setag(self, mode, val):
-
-        # note that cpython coerces any type passed to string using %s
         query = "?&call=set&group=agitation&mode=%s&val1=%s" % (mode, val)
         rsp = self.call_hello(query)
         return self._do_set_validate(rsp)
@@ -331,27 +352,18 @@ class HelloApp():
         # Get dora values ends up returning a blank element
         # for the name of the cluster, so the dict ends up
         # being {None: DoraValues}
-        if xml.result == 'True':
-            return xml.data[None]
-        return xml.result
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+        return xml.data[None]
 
     def batchrunning(self):
-        try:
-            return self.getdoravalues()['Batch'] != '--'
-        except TypeError:
-            return False
+        return self.getdoravalues()['Batch'] != '--'
 
     def reciperunning(self):
-        try:
-            return self.getdoravalues()['Sequence'] != 'Idle'
-        except TypeError:
-            return False
+        return self.getdoravalues()['Sequence'] != 'Idle'
 
     def reactorname(self):
-        try:
-            return self.getdoravalues()['Machine Name']
-        except TypeError:
-            return False
+        return self.getdoravalues()['Machine Name']
 
     def getMainValues(self):
         query = "?&call=getMainValues&json=true"
@@ -366,7 +378,10 @@ class HelloApp():
     def getAdvancedValues(self):
         query = "?&call=getAdvancedValues"
         rsp = self.call_hello(query)
-        return HelloXML(rsp).data['Advanced Values']
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+        return xml.data['Advanced Values']
 
     # backward compatibility
     getadvv = getAdvancedValues
@@ -377,7 +392,7 @@ class HelloApp():
         rsp = self.call_hello(query)
         return self._do_set_validate(rsp)
 
-    def _trycal(self, sensor, val1, target1, val2=None, target2=None):
+    def trycal(self, sensor, val1, target1, val2=None, target2=None):
         if val2 is None or target2 is None:
             # two point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s&val2=%s&target2=%s" % (sensor, val1, target1,
@@ -386,14 +401,26 @@ class HelloApp():
             # one point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s" % (sensor, val1, target1)
 
-        return self.call_hello(query)
+        rsp = self.call_hello(query)
+        return self._do_set_validate(rsp)
+
+    def getRawValue(self, sensor):
+        query = "?&call=getRawValue&sensor=" + sensor
+        rsp = self.call_hello(query)
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.data)
+        return float(xml.data)
 
     def getVersion(self):
         query = "?&call=getVersion"
         rsp = self.call_hello(query)
-        return HelloXML(rsp).data['Versions']
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.data)
+        return xml.data['Versions']
 
-    def getsize(self):
+    def getmodelsize(self):
         return int(self.getVersion()['Model'][4:])
 
     # Convenience functions
@@ -425,23 +452,23 @@ class HelloApp():
         temp = self.gpmv()['temperature']
         return temp['pv']['man']
 
-    def getconfig(self):
-        query = "?&call=getconfig"
+    def getConfig(self):
+        query = "?&call=getConfig"
         rsp = self.call_hello(query)
-        cfg = HelloXML(rsp).data['System Variables']
-        return cfg
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+        return xml.data['System Variables']
 
-    gpcfg = getconfig
-
-    # recipes
+    gpcfg = getConfig
 
     def getRecipes(self, loader="Loading+recipes"):
         query = "?&call=getRecipes&loader=" + loader
         rsp = self.call_hello(query)
         xml = HelloXML(rsp)
-        if xml.result == 'True':
-            return xml.data.split(",")
-        return xml.data
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+        return xml.data.split(",")
 
     def __repr__(self):
         base = super().__repr__()
@@ -450,19 +477,14 @@ class HelloApp():
     __str__ = __repr__
 
 
-def _fast_parse_message(xml_string):
-    xml = parse_xml(xml_string)
-    return xml[1].text
-
-
 class HelloXML():
-    _tree = ElementTree()
+    parse_readable = parse_rsp
 
     def __init__(self, xml):
         if isinstance(xml, str):
             root = parse_xml(xml)
         else:
-            root = self._tree.parse(xml)
+            root = self.parse_readable(xml)
 
         self._parse_types = self._parse_types
         self._parsed = False
@@ -471,8 +493,8 @@ class HelloXML():
         name, parsed = self.parse(root)
         self.parse_dict = {name: parsed}
         self.reply = parsed
-        self.result = parsed['Result']
-        self.data = self.message = parsed['Message']
+        self.result = parsed['Result'] == 'True'
+        self.data = self.msg = parsed['Message']
         self._parsed = True
 
     # probably unnecessary: access self.data directly
@@ -569,9 +591,11 @@ class BatchEntry():
         self.user = user
 
         self.start_time = int(start_time)
+        if stop_time == 'None':
+            stop_time = None
         stop_time = int(stop_time or time())
         if stop_time - self.start_time < 0:
-            stop_time = 2**31 - 1  # epoch
+            stop_time = 2 ** 31 - 1  # epoch
         self.stop_time = stop_time
 
         self.product_number = product_number
@@ -603,16 +627,16 @@ class BatchListXML():
     a different parsing scheme, and its own class.
     """
     def __init__(self, xml):
-        root = ElementTree().parse(xml)
+        root = parse_rsp(xml)
 
         self._parse_types = self._parse_types
         self._parsed = False
         name, parsed = self.parse(root)
         self.parse_dict = {name: parsed}
         self.reply = parsed
-        self.result = parsed['Result']
+        self.result = parsed['Result'] == 'True'
 
-        if self.result == 'True':
+        if self.result:
             ids_to_batches = parsed['Message']['Batches (cluster)']
 
             # map names <-> ids
@@ -635,8 +659,8 @@ class BatchListXML():
 
             self._parsed = True
         else:
-            print(parsed['Message'])
-            self.names_to_batches = self.ids_to_batches = self.data = None
+            self.names_to_batches = self.ids_to_batches = None
+            self.data = parsed['Message']
 
     def getdata(self):
         if self._parsed:
@@ -645,11 +669,11 @@ class BatchListXML():
             raise BadError("No data!")
 
     def getbatchname(self, id):
-        return self.ids_to_batches[id]['Name']
+        return self.ids_to_batches[id].name
 
     def getbatchid(self, name):
         name = name.lower()
-        return self.names_to_batches[name]['ID']
+        return self.names_to_batches[name].id
 
     def parse(self, e):
         name = e.tag
@@ -773,15 +797,15 @@ def __test1():
 
 
 def __test2():
-    b = HelloApp('192.168.1.6').getbatches(True)
-    d = b.getdata()
+    b = HelloApp('192.168.1.6').getbatches()
+    d = b.data
 
     def dump_dict(d, name=''):
         if name:
             print("Dumping %s" % name)
         for k, v in d.items():
             print(k, "=", v)
-    # dump_dict(d)
+    dump_dict(d)
     dump_dict(b.names_to_batches, "Names to batches")
     dump_dict(b.ids_to_batches, "Ids to batches")
 
@@ -799,4 +823,3 @@ def __test5():
 
 if __name__ == '__main__':
     __test5()
-

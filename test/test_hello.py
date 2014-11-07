@@ -33,7 +33,7 @@ def setUpModule():
     def make_xml():
         from urllib.request import urlopen
 
-        url = "http://71.189.82.196:6/webservice/interface/?&call=getconfig"
+        url = "http://71.189.82.196:6/webservice/interface/?&call=getConfig"
         rsp = urlopen(url)
         xml = rsp.read()
 
@@ -78,7 +78,7 @@ class TestXMLParse(unittest.TestCase):
         from hello.hello import HelloApp
 
         app = HelloApp('192.168.1.12')
-        rsp = app.getconfig()
+        rsp = app.getConfig()
         xml = rsp.read()
 
         print(HelloXML(xml))
