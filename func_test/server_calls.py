@@ -27,7 +27,7 @@ class TestServerCalls(unittest.TestCase):
 
     _all_server_calls = {
         "login",
-        "getVersions",
+        "getVersion",
         "getMainInfo",
         "getTrendData",
         "getAlarmList",
@@ -45,7 +45,7 @@ class TestServerCalls(unittest.TestCase):
         "setconfig",
         "getAlarms",
         "clearAlarm",
-        "clearAlarmsbyType",
+        "clearAlarmsByType",
         "clearAllAlarms",
         "revertTrialCal",
         "getRawValue",
@@ -80,8 +80,8 @@ class TestServerCalls(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.app = HelloApp(cls.ipaddy)
-        cls.app.logged_in = False
+        cls.app = None
+        cls.logged_in = False
         cls.calls_seen = set()
 
     @classmethod
@@ -93,6 +93,11 @@ class TestServerCalls(unittest.TestCase):
             for d in diff:
                 print(d)
 
+    def setUp(self):
+        if self.app is None:
+            self.app = HelloApp(self.ipaddy)
+            self.logged_in = False
+
     def _validate_xml_get(self, call, rsp):
         if call == 'getBatches':
             parser = BatchListXML
@@ -102,7 +107,7 @@ class TestServerCalls(unittest.TestCase):
         xml = parser(rsp)
         result = xml.result
         msg = xml.data
-        if result.lower() != 'true':
+        if not result:
             raise self.failureException(msg)
         self.assertNotEqual(msg, 'True')
 
@@ -110,35 +115,38 @@ class TestServerCalls(unittest.TestCase):
         txt = rsp.read().decode("utf-8")
         json = json_loads(txt)
         try:
-            result = json['Result']
+            result = json['Result'] == 'True'
         except KeyError:
-            result = "True"
+            try:
+                result = json['result'] == 'True'
+            except KeyError:
+                result = False
 
         msg = json['message']
 
-        if result != "True":
+        if not result:
             raise self.failureException(msg)
-        self.assertNotEqual(msg, 'true')
+        self.assertNotEqual(msg, 'True')
 
     def _validate_set(self, rsp):
 
         xml = HelloXML(rsp)
         result = xml.result
         msg = xml.msg
-        if result != "True":
+        if not result:
             raise self.failureException(msg)
-        self.assertEqual(msg, 'True')
+        self.assertTrue(msg, 'True')
 
     def login(self, force=False):
 
         if not self.logged_in or force:
             self.app.login()
-            self.app.logged_in = True
+            self.logged_in = True
 
     def logout(self, force=False):
         if self.logged_in or force:
             self.app.logout()
-            self.app.logged_in = False
+            self.logged_in = False
 
     def do_get_call(self, call, args=(), rtype='xml', needlogin=False):
         if not self.logged_in and needlogin:
@@ -173,19 +181,19 @@ class TestServerCalls(unittest.TestCase):
         # The weird listcomp format is so that data is easily accessible
         # in the test loop at the expense of readability here. The
         # format is (span, group, (args))
-        spans = "15m", "2hr", "12hr", "24hr", "72hr", "7day"
+        spans = "15min", "2hr", "12hr", "24hr", "72hr", "7day"
         groups = "agitation", "ph", "do", "temperature"
         combos = [(
-              s,
-              g, (
-              ('span', s),
-              ('group', g)
-              )
-        ) for s in spans for g in groups]
+                      s,
+                      g, (
+                          ('span', s),
+                          ('group', g),
+                          ('json', 'true')
+                      )
+                  ) for s in spans for g in groups]
 
         for span, group, args in combos:
-            with self.subTest(span=span, group=group):
-                self.do_get_call('getTrendData', args, 'json')
+            self.do_get_call('getTrendData', args, 'json')
 
     def test_getAlarmList(self):
         self.do_get_call('getAlarmList')
@@ -245,7 +253,7 @@ class TestServerCalls(unittest.TestCase):
         xml = HelloXML(rsp)
         result = xml.result
         msg = xml.msg
-        if result != "True":
+        if not result:
             if "Interlock" in msg and msg.endswith("7402"):
                 pass
             else:
@@ -277,49 +285,59 @@ class TestServerCalls(unittest.TestCase):
         )
         self.do_get_call('getAlarms', args)
 
-    def test_clearAlarms(self):
-        # these must be tested in order!
+    def test_clearAlarm(self):
         alarms = self.app.getAlarms()
         ids = alarms['alarmIDs'].split(',')
-        types = alarms['type'].split(',')
         try:
             alarm = ids[0]
+        except IndexError:
+            raise SkipTest("No alarms, can't test")
+
+        self.do_set_call('clearAlarm', (('val1', alarm),))
+
+    def test_clearAlarmsByType(self):
+
+        alarms = self.app.getAlarms()
+        types = alarms['type'].split(',')
+        try:
             typ = types[1]
         except IndexError:
             raise SkipTest("No alarms, can't test")
 
-        with self.subTest("Testing clearAlarm", val1=alarm):
-            self.do_set_call('clearAlarm', (('val1', alarm),))
-
-        with self.subTest("Testing clearAlarmsByType", val1=typ):
-            self.do_set_call("clearAlarmsByType", (('val1', typ),))
-
-        with self.subTest("Testing clearAllAlarms"):
-            # do this manually
-            pass
+        self.do_set_call("clearAlarmsByType", (('val1', typ),))
 
     def test_revertTrialCal(self):
         sensors = "pha", "phb", "doa", "dob", "level", "pressure"
         for s in sensors:
-            with self.subTest("revertTrialCal", sensor=s):
-                self.do_set_call('revertTrialCal', (('sensor', s),))
+            self.do_set_call('revertTrialCal', (('sensor', s),))
 
     def test_getRawValue(self):
         sensors = "pha", "phb", "doa", "dob", "level", "pressure"
         for s in sensors:
-            with self.subTest("getRawValue", sensor=s):
-                self.do_get_call('getRawValue', (('sensor', s),))
+            self.do_get_call('getRawValue', (('sensor', s),))
 
-    @unittest.skip("Not Implemented")
     def test_Calibration(self):
-        # Try a simple one-point DO calibration
+        """ Try a simple one-point DO calibration, not changing the actual calibration """
         rawvalue = self.app.getRawValue('doa')
 
+        # trycal
+        args = (
+            ('sensor', 'doa'),
+            ('val1', str(rawvalue)),
+            ('target1', str(rawvalue))
+        )
+
+        self.do_set_call('tryCal', args)
+
+        # savetrialcal
+        self.do_set_call('savetrialcal', (('sensor', 'doa'),))
+
     def test_AutoPilot(self):
-        with self.subTest('getRecipes'):
-            rsp = self.app.call_hello_from_args2("getRecipes", (("loader", "Loading+recipes"),))
-            txt = rsp.read().decode('utf-8')
-            self._validate_xml_get('getRecipes', txt)
+        rsp = self.app.call_hello_from_args2("getRecipes", (("loader", "Loading+recipes"),))
+        txt = rsp.read().decode('utf-8')
+        self.calls_seen.add("getRecipes")
+        self._validate_xml_get('getRecipes', txt)
+
 
         xml = HelloXML(txt)
         recipes = xml.data.split(',')
@@ -333,25 +351,20 @@ class TestServerCalls(unittest.TestCase):
         else:
             r = recipes[0]
 
-        with self.subTest("runRecipe"):
-            args = (
-                ("loader", "Starting+Auto-pilot"),
-                ("recipe", r)
-            )
-            self.do_set_call('runRecipe', args)
+        args = (
+            ("loader", "Starting+Auto-pilot"),
+            ("recipe", r)
+        )
+        self.do_set_call('runRecipe', args)
 
-        with self.subTest("getRecipeStep"):
-            self.do_get_call("getRecipeStep")
+        self.do_get_call("getRecipeStep")
+        self.do_get_call("getRecipeItems", (("recipe", r),))
 
-        with self.subTest("getRecipeItems"):
-            self.do_get_call("getRecipeItems", (("recipe", r),))
-
-        with self.subTest('recipeSkip'):
-            args = (
-                ("val1", 'sequence'),
-                ("recipe", r)
-            )
-            self.do_set_call("recipeSkip", args)
+        args = (
+            ("val1", 'sequence'),
+            ("recipe", r)
+        )
+        self.do_set_call("recipeSkip", args)
 
     def test_getBatches(self):
         self.do_get_call("getBatches", (("loader", "Loading+batches..."),))
@@ -371,27 +384,25 @@ class TestServerCalls(unittest.TestCase):
         types = "data", "user_events", "recipe_steps", "errors", "alarms"
 
         for t in types:
-            with self.subTest("getReport(byBatch)", type=t):
-                args = (
-                    ("mode", 'byBatch'),
-                    ("type", t),
-                    ("val1", id),
-                    ("val2", "")
-                )
-                self.do_get_call('getReport', args)
+            args = (
+                ("mode", 'byBatch'),
+                ("type", t),
+                ("val1", id),
+                ("val2", "")
+            )
+            self.do_get_call('getReport', args, 'xml', True)
 
         # by time
         start = batch.start_time
         stop = batch.stop_time
         for t in types:
-            with self.subTest("getReport(byDate)", type=t):
-                args = (
-                    ("mode", 'byDate'),
-                    ("type", t),
-                    ("val1", start),
-                    ("val2", stop)
-                )
-                self.do_get_call('getReport', args)
+            args = (
+                ("mode", 'byDate'),
+                ("type", t),
+                ("val1", start),
+                ("val2", stop)
+            )
+            self.do_get_call('getReport', args)
 
     def test_getPumps(self):
         self.do_get_call("getPumps")
@@ -408,26 +419,23 @@ class TestServerCalls(unittest.TestCase):
         else:
             b_speed = c_speed = 500
 
-        with self.subTest('setpumpa'):
-            args = (
-                ("val1", 1),
-                ("val2", a_speed)
-            )
-            self.do_set_call('setpumpa', args)
+        args = (
+            ("val1", 1),
+            ("val2", a_speed)
+        )
+        self.do_set_call('setpumpa', args)
 
-        with self.subTest("setpumpb"):
-            args = (
-                ("val1", 1),
-                ("val2", b_speed)
-            )
-            self.do_set_call('setpumpb', args)
+        args = (
+            ("val1", 1),
+            ("val2", b_speed)
+        )
+        self.do_set_call('setpumpb', args)
 
-        with self.subTest('setpumpc'):
-            args = (
-                ("val1", 1),
-                ("val2", c_speed)
-            )
-            self.do_set_call("setpumpc", args)
+        args = (
+            ("val1", 1),
+            ("val2", c_speed)
+        )
+        self.do_set_call("setpumpc", args)
 
     def test_setpumpsample(self):
         args = (
@@ -437,61 +445,88 @@ class TestServerCalls(unittest.TestCase):
         self.do_set_call('setpumpsample', args)
 
     def test_set(self):
+
+        # cache the initial values to reset at the end
+        mv = self.app.getMainValues()
+
         group = 'agitation'
-        mode = 0
-        sp = 20
-        with self.subTest('set agitation', group=group, mode=mode, sp=sp):
-            args = (
-                ("group", group),
-                ("mode", mode),
-                ("val1", sp)
-            )
-            self.do_set_call('set', args)
+        mode = "0"
+        sp = "20"
+        args = (
+            ("group", group),
+            ("mode", mode),
+            ("val1", sp)
+        )
+
+        self.do_set_call('set', args)
+
+        ctrl = mv['agitation']
+        val = ctrl['sp'] if ctrl['mode'] == 0 else ctrl['man']
+        self.app.setag(ctrl['mode'], val)
 
         group = "temperature"
-        mode = 0
-        sp = 37
+        mode = "0"
+        sp = "37"
 
-        with self.subTest('set temperature', group=group, mode=mode, sp=sp):
-            args = (
-                ("group", group),
-                ("mode", mode),
-                ("val1", sp)
-            )
-            self.do_set_call('set', args)
+        args = (
+            ("group", group),
+            ("mode", mode),
+            ("val1", sp)
+        )
+        self.do_set_call('set', args)
+
+        ctrl = mv['temperature']
+        val = ctrl['sp'] if ctrl['mode'] == 0 else ctrl['man']
+        self.app.settemp(ctrl['mode'], val)
 
         group = "do"
-        mode = 1
-        n2 = 25
-        o2 = 150
+        mode = "1"
+        n2 = "25"
+        o2 = "150"
 
-        with self.subTest("set do", group=group, mode=mode, n2=n2, o2=o2):
-            args = (
-                ("group", group),
-                ("mode", mode),
-                ("val1", n2),
-                ("val2", o2)
-            )
-            self.do_set_call("set", args)
+        args = (
+            ("group", group),
+            ("mode", mode),
+            ("val1", n2),
+            ("val2", o2)
+        )
+        self.do_set_call("set", args)
+
+        ctrl = mv['do']
+        if ctrl['mode'] == 0:
+            val1 = ctrl['sp']
+            self.app.setdo(ctrl['mode'], val1)
+        else:
+            val1 = ctrl['manUp']
+            val2 = ctrl['manDown']
+            self.app.setdo(ctrl['mode'], val1, val2)
 
         group = "ph"
-        mode = 1
-        co2 = 25
-        base = 15
+        mode = "1"
+        co2 = "25"
+        base = "15"
 
-        with self.subTest("set do", group=group, mode=mode, n2=n2, o2=o2):
-            args = (
-                ("group", group),
-                ("mode", mode),
-                ("val1", co2),
-                ("val2", base)
-            )
-            self.do_set_call("set", args)
+        args = (
+            ("group", group),
+            ("mode", mode),
+            ("val1", co2),
+            ("val2", base)
+        )
+        self.do_set_call("set", args)
+
+        ctrl = mv['ph']
+        if ctrl['mode'] == 0:
+            val1 = ctrl['sp']
+            self.app.setdo(ctrl['mode'], val1)
+        else:
+            val1 = ctrl['manUp']
+            val2 = ctrl['manDown']
+            self.app.setph(ctrl['mode'], val1, val2)
 
     def test_setstartendbatch(self):
         setstartargs = (
             "setstartbatch", (
-                ("val1", "autobatchtest")
+                ("val1", "autobatchtest"),
             )
         )
         setendargs = (
@@ -504,8 +539,7 @@ class TestServerCalls(unittest.TestCase):
             order = setstartargs, setendargs
 
         for call, args in order:
-            with self.subTest(call, args=args):
-                self.do_set_call(call, args)
+            self.do_set_call(call, args)
 
     def test_getSensorStates(self):
         self.do_get_call("getSensorStates")

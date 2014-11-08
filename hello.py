@@ -177,7 +177,10 @@ class HelloApp():
         """
         same as below, but 'call' is a separate argument
         """
-        query = ''.join(("?&call=", call, "&", "&".join("=".join(a) for a in args)))
+        if args:
+            query = ''.join(("?&call=", call, "&", "&".join("%s=%s" % a for a in args)))
+        else:
+            query = "?&call=" + call
         return self.call_hello(query)
 
     def call_hello_from_args(self, args):
@@ -302,6 +305,7 @@ class HelloApp():
         xml = BatchListXML(rsp)
         if not xml.result:
             raise ServerCallError
+        return xml
 
     def getreport_byname(self, type, val1):
         return self.getReport('byBatch', type, val1)
@@ -322,10 +326,24 @@ class HelloApp():
             raise HelloError("Bad batch name given- batch not found: " + name) from None
         return self.getdatareport_bybatchid(id)
 
-    def setdo(self, mode, n2, o2=0):
+    def setdo(self, mode, n2, o2=None):
         # Val1 = N2 sp (or auto sp)
         # Val2 = O2 sp (unused if auto mode)
-        query = "?&call=set&group=do&mode=%s&val1=%s&val2=%s" % (mode, n2, o2)
+
+        if o2 is None:
+            query = "?&call=set&group=do&mode=%s&val1=%s" % (mode, n2)
+        else:
+            query = "?&call=set&group=do&mode=%s&val1=%s&val2=%s" % (mode, n2, o2)
+        rsp = self.call_hello(query)
+        return self._do_set_validate(rsp)
+
+    def setph(self, mode, co2, base=None):
+        # Val1 = CO2 sp (or auto sp)
+        # Val2 = base sp (unused if auto mode)
+        if base is None:
+            query = "?&call=set&group=ph&mode=%s&val1=%s" % (mode, co2)
+        else:
+            query = "?&call=set&group=ph&mode=%s&val1=%s&val2=%s" % (mode, co2, base)
         rsp = self.call_hello(query)
         return self._do_set_validate(rsp)
 
@@ -336,6 +354,11 @@ class HelloApp():
 
     def setag(self, mode, val):
         query = "?&call=set&group=agitation&mode=%s&val1=%s" % (mode, val)
+        rsp = self.call_hello(query)
+        return self._do_set_validate(rsp)
+
+    def settemp(self, mode, val):
+        query = "?&call=set&group=temperature&mode=%s&val1=%s" % (mode, val)
         rsp = self.call_hello(query)
         return self._do_set_validate(rsp)
 
@@ -393,6 +416,13 @@ class HelloApp():
         return self._do_set_validate(rsp)
 
     def trycal(self, sensor, val1, target1, val2=None, target2=None):
+        """
+        @param sensor: sensor: "doa", "dob", "pha", "phb", "level", "pressure"
+        @param val1: value returned by getRawValue()
+        @param target1: pv that val1 actually corresponds to (value entered by user)
+        @param val2: value returend by getRawValue()
+        @param target2: pv that val1 actually corresponds to (value entered by user)
+        """
         if val2 is None or target2 is None:
             # two point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s&val2=%s&target2=%s" % (sensor, val1, target1,
@@ -478,13 +508,12 @@ class HelloApp():
 
 
 class HelloXML():
-    parse_readable = parse_rsp
 
     def __init__(self, xml):
         if isinstance(xml, str):
             root = parse_xml(xml)
         else:
-            root = self.parse_readable(xml)
+            root = parse_rsp(xml)
 
         self._parse_types = self._parse_types
         self._parsed = False
@@ -760,42 +789,6 @@ class BatchListXML():
     }
 
 
-def __test1():
-    # noinspection PyUnusedLocal
-    settings = (
-        ("Agitation", "Minimum (RPM)", 3),
-        ("Agitation", "Power Auto Max (%)", 100),
-        ("Agitation", "Power Auto Min (%)", 3.9),
-        ("Agitation", "Auto Max Startup (%)", 7),
-        ("Agitation", "Samples To Average", 3),
-        ("Agitation", "Min Mag Interval (s)", 0.1),
-        ("Agitation", "Max Change Rate (%/s)", 100),
-        ("Agitation", "PWM Period (us)", 1000),
-        ("Agitation", "PWM OnTime (us)", 1000),
-        ("Agitation", "P Gain  (%/RPM)", 3.5)
-    )
-
-    app = HelloApp('192.168.1.6')
-
-    # for grp, setting, val in settings:
-    # app.login()
-    #     call = app.setconfig(grp, setting, val)
-    #     print(sanitize_url(call))
-    # app.login()
-
-    i = 1
-    from time import sleep, time
-
-    start = time()
-    while True:
-        print("loop %d after %d seconds" % (i, time() - start))
-        r, txt = app.setag(1, 10)
-        print(r.getheaders())
-        print(txt)
-        i += 1
-        sleep(1)
-
-
 def __test2():
     b = HelloApp('192.168.1.6').getbatches()
     d = b.data
@@ -822,4 +815,7 @@ def __test5():
     HelloApp('192.168.1.6').getdoravalues()
 
 if __name__ == '__main__':
+    __test2()
+    __test3()
+    __test4()
     __test5()
