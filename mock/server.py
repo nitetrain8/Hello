@@ -9,58 +9,100 @@ Created in: PyCharm Community Edition
 __author__ = 'Nathan Starkweather'
 
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+from hello.mock.state import HelloState
 from pysrc.snippets.metas import pfc_meta
 from json import dumps
+import traceback
+import sys
 
-debug = 1
+debug = 0
 if debug:
     meta = pfc_meta
 else:
     meta = type
 
 
+class HelloServerException(Exception):
+    pass
+
+# Adding an explicit exception attribute makes
+# it easier to extract a string representation
+# of the error for returning to the client.
+
+
+class BadQueryString(HelloServerException):
+    def __init__(self, string):
+        self.args = string,
+        self.string = string
+
+
+class UnrecognizedCommand(HelloServerException):
+    def __init__(self, cmd):
+        self.args = cmd,
+        self.cmd = cmd
+        self.err_code = "7815"
 
 
 class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
 
     def do_GET(self):
         call, params = self.parse_qs(self.path)
-        print(params)
         try:
-            handler = getattr(self, call)
-            handler(**params)
-        except:
+            handler = getattr(self, call, None)
+            if handler is None:
+                raise UnrecognizedCommand(call)
+            handler(params, True)
+        except BadQueryString as e:
+            self.send_error(400, "Bad query string:\"%s\"" % e.string)
+        except Exception:
             self.send_error(400, "Bad Path " + self.path)
-            import traceback, sys
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
             return
 
     def parse_qs(self, qs):
 
-        qs = qs.lstrip("/?")
+        qs = qs.lstrip("/?&")
         kvs = qs.split("&")
         if kvs[0] in {"/", "/?"}:
             kvs = kvs[1:]
 
-        d = {}
-        call = None
+        kws = {}
         for kv in kvs:
             k, v = kv.lower().split("=")
-            if k == 'call':
-                call = v
-                continue
-            if k in d:
-                raise ValueError("Got multiple arguments for %s" % k)
-            d[k] = v
+            if k in kws:
+                raise BadQueryString("Got multiple arguments for %s" % k)
+            kws[k] = v
 
+        call = kws.get('call')
         if call is None:
-            raise ValueError("Bad Query String: No Call")
+            raise BadQueryString("Bad Query String: No Call Specified.")
 
-        return call, d
+        return call, kws
 
+    def send_good_reply(self, response, content_type='xml'):
+        self.send_response(200)
+        self.send_header("Content-Length", len(response))
+        self.send_header("Content-Type", "application/" + content_type)
+        self.end_headers()
+        self.wfile.write(response)
 
-    def getmainvalues(self, json=True):
+    def getmainvalues(self, params, real_mode=False):
+        """
+        @param params: query string kv pairs
+        @param real_mode: parse keywords the way the webserver does (True), or logically (False).
+        @return:
+        """
+
+        if 'json' in params:
+            del params['json']
+            json = True
+        else:
+            json = False
+
+        # debug
+        json = True
+
         mv = {
             "result": "True",
             "message": {
@@ -115,24 +157,23 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         }
 
         mvs = dumps(mv).encode('ascii')
-        self.send_response(200)
-        self.send_header("Content-Length", len(mvs))
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(mvs)
-
+        self.send_good_reply(mvs, 'json')
 
 
 class HelloServer(HTTPServer, metaclass=meta):
     """ A mock hello server that responds to calls.
     """
-    def __init__(self, host='', port=12345):
+    def __init__(self, host='', port=12345, state=None):
         HTTPServer.__init__(self, (host, port), MyHTTPHandler)
+
+
+
 
 
 def test1():
     s = HelloServer()
-    import threading, time
+    import threading
+    import time
 
     t = threading.Thread(None, s.handle_request)
     t.daemon = True
@@ -153,8 +194,7 @@ def test2():
     s.handle_request()
 
 if __name__ == '__main__':
-    import sys
     try:
-        test2()
+        test1()
     finally:
         sys.stdout.flush()

@@ -243,7 +243,7 @@ class TestStateJson(unittest.TestCase):
             }
         }
 
-        actual = s.get_raw_main_values()
+        actual = s.get_dict_main_values()
 
         try:
             self.assertEqual(expected, actual)

@@ -13,6 +13,7 @@ __author__ = 'Nathan Starkweather'
 from math import sin as _sin, pi as _pi
 from time import time as _time
 from json import dumps as json_dumps
+from xml.etree.ElementTree import Element, SubElement, tostring as xml_tostring
 
 
 @nextroutine
@@ -124,11 +125,29 @@ def multiwave(waves, middle=0):
 
 class BaseController():
 
+    _name_to_lv_type = {
+        'pv': 'SGL',
+        'sp': 'SGL',
+        'man': 'SGL',
+        'manUp': 'SGL',
+        'manDown': 'SGL',
+        'mode': 'U16',
+        'error': 'U16',
+        'interlocked': 'U32'
+    }
+
     def __init__(self, name):
+        """
+        @param name: Name of controller
+        @type name: str
+        @return:
+        """
         self.pv = 0
         self.name = name
         self._history = []
         self._pvgenerator = lambda: (0, 0)
+
+        self.mv_attrs = ("pv",)
 
     def set_pvgen(self, gen):
         self._pvgenerator = gen
@@ -149,6 +168,41 @@ class BaseController():
     def todict(self):
         return {'pv': self.pv}
 
+    def todict2(self):
+        return {attr: getattr(self, attr) for attr in self.mv_attrs}
+
+    def toxml(self, root=None):
+        if root is None:
+            cluster = Element('Cluster')
+        else:
+            cluster = SubElement(root, 'Cluster')
+        cluster.text = '\n'
+
+        name = SubElement(cluster, "Name")
+        name.text = self.name.capitalize()
+        vals = SubElement(cluster, 'NumElts')
+        vals.text = str(len(self.mv_attrs))
+
+        # python unifies number types into a single
+        # type, so we have to use a separate mapping
+        # to find the proper "type" label to wrap
+        # the element in.
+        for attr in self.mv_attrs:
+            lv_type = self._name_to_lv_type[attr]
+            typ = SubElement(cluster, lv_type)
+            typ.text = "\n"
+
+            name = SubElement(typ, "Name")
+            name.text = attr
+            val = SubElement(typ, "Val")
+
+            if lv_type == 'SGL':
+                val.text = "%.5f" % getattr(self, attr)
+            else:
+                val.text = "%d" % getattr(self, attr)
+
+        return cluster
+
 
 class SimpleController(BaseController):
     def __init__(self, name, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0):
@@ -160,6 +214,8 @@ class SimpleController(BaseController):
         self.mode = mode
         self.error = error
         self.interlocked = interlocked
+
+        self.mv_attrs = 'pv', 'sp', 'man', 'mode', 'error', 'interlocked'
 
         self.set_pvgen(sin_wave(5, 30, 15))
 
@@ -179,11 +235,13 @@ class TwoWayController(BaseController):
         super().__init__(name)
         self.pv = pv
         self.sp = sp
-        self.manup = manup
-        self.mandown = mandown
+        self.manUp = manup
+        self.manDown = mandown
         self.mode = mode
         self.error = error
         self.interlocked = interlocked
+
+        self.mv_attrs = 'pv', 'sp', 'manUp', 'manDown', 'mode', 'error', 'interlocked'
 
         self.set_pvgen(sin_wave(3, 60, 50))
 
@@ -191,8 +249,8 @@ class TwoWayController(BaseController):
         return {
             'pv': self.pv,
             'sp': self.sp,
-            'manUp': self.manup,
-            'manDown': self.mandown,
+            'manUp': self.manUp,
+            'manDown': self.manDown,
             'mode': self.mode,
             'error': self.error,
             'interlocked': self.interlocked
@@ -206,6 +264,8 @@ class SmallController(BaseController):
         self.sp = sp
         self.mode = mode
         self.error = error
+
+        self.mv_attrs = 'pv', 'mode', 'error'
 
         self.set_pvgen(sin_wave(1, 10, 5))
 
@@ -255,14 +315,65 @@ class HelloState():
         for c in self.controllers:
             c.step()
 
-    def get_raw_main_values(self):
+    def get_dict_main_values(self):
         return {
             "result": "True",
-            "message": {c.name: c.todict() for c in self.controllers}
+            "message": {c.name: c.todict2() for c in self.controllers}
         }
 
-    def jsonify(self):
-        return json_dumps(self.get_raw_main_values(), indent=4)
+    def get_xml_main_values(self):
+        # Yes, XML really is this goddamn stupid
+        root = Element("Reply")
+        root.text = "\n"
+        result = SubElement(root, 'Result')
+        result.text = "True"
+        message = SubElement(root, "Message")
+        message.text = "\n"
+        cluster = SubElement(message, "Cluster")
+        cluster.text = "\n"
+        name = SubElement(cluster, "Name")
+        name.text = "Message"
+        nelements = SubElement(cluster, "NumElts")
+        nelements.text = str(len(self.controllers))
+        for c in self.controllers:
+            c.toxml(cluster)
+        return root
+
+    def getMainValues(self, json=True):
+        if json:
+            return json_dumps(self.get_dict_main_values(), indent=4)
+        else:
+            return xml_dump(self.get_xml_main_values(), None, 'ascii')
+
+
+def xml_dump(obj, root=None, encoding='us-ascii'):
+    if isinstance(obj, dict):
+        obj = _dict_toxml(obj, root)
+    return xml_tostring(obj, encoding)
+
+
+def simple_xml_dump(root, encoding='us-ascii')
+
+
+def _dict_toxml(mapping, root):
+    if root is None:
+        root = Element("Reply")
+        root.text = "\n"
+    for k, v in mapping.items():
+        e = SubElement(root, k)
+        if isinstance(v, dict):
+            _dict_toxml(v, e)
+            e.text = '\n'
+        else:
+            e.text = str(v)
+    return root
+
+
+def test1():
+    from xml.etree.ElementTree import dump, XML
+    xml = HelloState().getMainValues(False)
+    xml = XML(xml)
+    dump(xml)
 
 if __name__ == '__main__':
-    print(HelloState().jsonify())
+    test1()

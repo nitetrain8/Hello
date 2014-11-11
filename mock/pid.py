@@ -10,6 +10,9 @@ __author__ = 'Nathan Starkweather'
 
 
 class PIDController():
+
+    # The actual controllers can also be in manual mode,
+    # but the PID controller isn't actually aware of it.
     MODE_AUTO = 0
     MODE_OFF = 2
 
@@ -42,11 +45,20 @@ class PIDController():
         self._bump = 0
         self._last_pv = 0
 
-    def set_on(self, sp=None):
+    def set_on(self, pv, output=0, sp=None):
+        """
+         Turn the controller back on (aka auto mode).
+         In order for the bumpless mechanism to work properly,
+         the controller must be made aware of the current pv
+         and manual output of the process.
+        """
         if sp is not None:
             self._sp = sp
         else:
             sp = self._sp
+
+        self._current_output = output
+        self._last_pv = pv
 
         if self.mode == self.MODE_OFF:
             self._bump = self._current_output - (sp - self._last_pv) * self._pgain
@@ -129,6 +141,8 @@ def delay_buffer(sec, startvalue):
     # generator. Therefore, we need a dummy "yield" statement
     # to satisfy that criteria, and then to send the generator
     # the startvalue to initialize the internal state properly.
+    # The internal generator state must be suspended between
+    # yielding and retriving a value sent by send() to work.
     gen = _delay_generator(sec, startvalue)
     next(gen)
     gen.send(startvalue)
@@ -178,9 +192,9 @@ def process(model, pid):
         yield op, pv
 
 
-""" The below class is an oops- the lazy ticking mechanism can be applied
-to a complete process, but not to a PID controller (since PV changes, presumably,
-each tick). """
+# The below class is an oops- the lazy ticking mechanism can be applied
+# to a complete process, but not to a PID controller (since PV changes, presumably,
+# each tick).
 
 
 class LazyPID(PIDController):
