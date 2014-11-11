@@ -352,7 +352,29 @@ def xml_dump(obj, root=None, encoding='us-ascii'):
     return xml_tostring(obj, encoding)
 
 
-def simple_xml_dump(root, encoding='us-ascii')
+from io import BytesIO
+
+
+def _simple_xml_dump_inner_ascii(b, elem):
+
+    tag = elem.tag.encode('ascii')
+    b.write(tag.join((b"<", b">")))
+
+    txt = elem.text
+    if txt:
+        b.write(txt.encode('ascii'))
+    b.write(b"\n")
+
+    if len(elem):
+        for e in elem:
+            _simple_xml_dump_inner_ascii(b, e)
+    b.write(tag.join((b"</", b">\n")))
+
+
+def simple_xml_dump(root):
+    b = BytesIO()
+    _simple_xml_dump_inner_ascii(b, root)
+    return b.getvalue()
 
 
 def _dict_toxml(mapping, root):
@@ -373,6 +395,7 @@ def test1():
     from xml.etree.ElementTree import dump, XML
     xml = HelloState().getMainValues(False)
     xml = XML(xml)
+    print(simple_xml_dump(xml))
     dump(xml)
 
 if __name__ == '__main__':
