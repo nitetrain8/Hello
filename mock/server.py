@@ -11,7 +11,8 @@ __author__ = 'Nathan Starkweather'
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from hello.mock.state import HelloState
 from pysrc.snippets.metas import pfc_meta
-from json import dumps
+from xml.etree.ElementTree import Element, SubElement, tostring as xml_tostring
+from json import dumps as json_dumps
 import traceback
 import sys
 
@@ -31,36 +32,98 @@ class HelloServerException(Exception):
 
 
 class BadQueryString(HelloServerException):
+    """ Couldn't parse query string, multiple arguments given,
+    or other syntax & semantic errors.
+    """
     def __init__(self, string):
         self.args = string,
         self.string = string
 
 
 class UnrecognizedCommand(HelloServerException):
-    def __init__(self, cmd):
+    """ User asked for something weird.
+    """
+    def json_reply(self):
+        reply = {
+            'result': self.result,
+            "message": self.message
+        }
+        reply = json_dumps(reply)
+        return reply
+
+    def xml_reply(self):
+        reply = Element("Reply")
+        result = SubElement(reply, "Result")
+        result.text = self.result
+        message = SubElement(reply, "Message")
+        message.text = self.message
+        reply = xml_tostring(reply, 'us-ascii')
+        return reply
+
+    def __init__(self, cmd, rsp_fmt="xml"):
         self.args = cmd,
         self.cmd = cmd
-        self.err_code = "7815"
+        self.err_code = 7815
+        self.result = "False"
+        self.message = "Unrecognized Command: %s" % self.err_code
+        self.rsp_fmt = rsp_fmt
+
+        if rsp_fmt == 'json':
+            self.reply = self.json_reply()
+        else:
+            self.reply = self.xml_reply()
+
+
+class ArgumentError(UnrecognizedCommand):
+    """ User asked for something known, but with bad arguments.
+    """
+    def __init__(self, what, err_code, rsp_fmt, msg=None):
+        self.result = "False"
+        self.what = what
+        if msg:
+            self.message = msg
+        else:
+            self.message = "Unrecognized %s: %s" % (what, err_code)
+        self.args = self.message,
+        self.err_code = err_code
+        self.rsp_fmt = rsp_fmt
+
+        if rsp_fmt == 'json':
+            self.reply = self.json_reply()
+        else:
+            self.reply = self.xml_reply()
 
 
 class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
 
+    json_true_response = json_dumps(
+        {'result': "True",
+         "message": "True"}
+    ).encode('ascii')
+
+    xml_true_response = '<?xml version="1.0" encoding="us-ascii" standalone="no" ?>' \
+                        '<Reply><Result>True</Result><Message>True</Message></Reply>'
+    xml_true_response = xml_true_response.encode('us-ascii')
+
     def do_GET(self):
-        call, params = self.parse_qs(self.path)
         try:
+            call, params = self.parse_qs(self.path)
             handler = getattr(self, call, None)
             if handler is None:
                 raise UnrecognizedCommand(call)
             handler(params, True)
         except BadQueryString as e:
-            self.send_error(400, "Bad query string:\"%s\"" % e.string)
+            self.send_error(400, "Bad query string: \"%s\"" % e.string)
+        except ArgumentError as e:
+            self.send_bad_reply(e.reply, e.rsp_fmt)
+        except UnrecognizedCommand as e:
+            self.send_bad_reply(e.reply, e.rsp_fmt)
         except Exception:
             self.send_error(400, "Bad Path " + self.path)
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
-            return
 
-    def parse_qs(self, qs):
+    def parse_qs(self, qs, strict=False):
 
         qs = qs.lstrip("/?&")
         kvs = qs.split("&")
@@ -71,12 +134,13 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         for kv in kvs:
             k, v = kv.lower().split("=")
             if k in kws:
-                raise BadQueryString("Got multiple arguments for %s" % k)
+                if strict:
+                    raise BadQueryString("Got multiple arguments for %s" % k)
             kws[k] = v
 
         call = kws.get('call')
         if call is None:
-            raise BadQueryString("Bad Query String: No Call Specified.")
+            raise ArgumentError("Syntax", 7816, kws.get('json', False), "Syntax Error 7816")
 
         return call, kws
 
@@ -87,77 +151,62 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         self.end_headers()
         self.wfile.write(response)
 
+    def send_good_set_reply(self, content_type='xml'):
+        if content_type == 'json':
+            response = self.json_true_response
+        else:
+            response = self.xml_true_response
+
+        self.send_response(200)
+        self.send_header("Content-Length", len(response))
+        self.send_header("Content-Type", "application/" + content_type)
+        self.end_headers()
+        self.wfile.write(response)
+
+    def send_bad_reply(self, response, content_type='xml'):
+        self.send_response(200)
+        self.send_header("Content-Length", len(response))
+        self.send_header("Content-Type", "application/" + content_type)
+        self.end_headers()
+        self.wfile.write(response)
+
     def getmainvalues(self, params, real_mode=False):
         """
         @param params: query string kv pairs
+        @type params: dict
         @param real_mode: parse keywords the way the webserver does (True), or logically (False).
         @return:
         """
+        if real_mode:
+            if 'json' in params:
+                json = True
+            else:
+                json = False
 
-        if 'json' in params:
-            del params['json']
-            json = True
         else:
-            json = False
+            json = params.pop('json', False)
+            if params:
+                raise Exception
 
-        # debug
-        json = True
+        #: @type: HelloState
+        state = self.server.state
+        state.get_update(json)
+        if json:
+            self.send_good_reply(state, 'json')
+        else:
+            self.send_good_reply(state, 'xml')
 
-        mv = {
-            "result": "True",
-            "message": {
-                "agitation": {
-                    "pv": 0.0000,
-                    "sp": 20.000,
-                    "man": 5.0000,
-                    "mode": 2,
-                    "error": 0,
-                    "interlocked": 0
-            },
-                "temperature": {
-                    "pv": 26.236,
-                    "sp": 37.000,
-                    "man": 45.000,
-                    "mode": 2,
-                    "error": 0,
-                    "interlocked": 6
-                },
-                "do": {
-                    "pv": -10.000,
-                    "sp": 50.000,
-                    "manUp": 500.00,
-                    "manDown": 0.0000,
-                    "mode": 2,
-                    "error": 200
-                },
-                "ph": {
-                    "pv": 11.594,
-                    "sp": 7.0000,
-                    "manUp": 0.0000,
-                    "manDown": 7.0000,
-                    "mode": 2,
-                    "error": 100
-                },
-                "pressure": {
-                    "pv": -7.8125E-10,
-                    "mode": 0,
-                    "error": 0
-                },
-                "level": {
-                    "pv": 0.0000,
-                    "mode": 0,
-                    "error": 90
-                },
-                "condenser": {
-                    "pv": 28.892,
-                    "mode": 0,
-                    "error": 90
-                }
-            }
-        }
+    def login(self, params, real_mode=False):
+        try:
+            val1 = params.pop("val1")  # user
+            val2 = params.pop("val2")  # pwd
+            loader = params.pop("loader")
+            skipvalidate = params.pop("skipvalidate")
+        except KeyError as e:
+            raise ArgumentError(e.args[0], 7115, 'xml', 'Username/password incorrect 7115')
 
-        mvs = dumps(mv).encode('ascii')
-        self.send_good_reply(mvs, 'json')
+        if self.server.state.login(val1, val2, loader, skipvalidate):
+            self.send_good_set_reply()
 
 
 class HelloServer(HTTPServer, metaclass=meta):
@@ -165,6 +214,7 @@ class HelloServer(HTTPServer, metaclass=meta):
     """
     def __init__(self, host='', port=12345, state=None):
         HTTPServer.__init__(self, (host, port), MyHTTPHandler)
+        self.state = state or HelloState()
 
 
 

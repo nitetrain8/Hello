@@ -6,14 +6,14 @@ Created in: PyCharm Community Edition
 
 
 """
-from hello.mock.util import nextroutine
+from hello.mock.util import nextroutine, xml_dump, simple_xml_dump
 
 __author__ = 'Nathan Starkweather'
 
 from math import sin as _sin, pi as _pi
 from time import time as _time
 from json import dumps as json_dumps
-from xml.etree.ElementTree import Element, SubElement, tostring as xml_tostring
+from xml.etree.ElementTree import Element, SubElement
 
 
 @nextroutine
@@ -23,7 +23,7 @@ def sin_wave(amplitude, period, middle=0, offset=0, gen=None, trigfunc=None):
     @param period: period of wave (in units returned from gen)
     @param middle: verticle offset of wave
     @param offset: horizontal offset of wave
-    @param gen: infinite iterator. each new value is used to "step" output. default to time().
+    @param gen: infinite iterator. each new value is used to "step_main_values" output. default to time().
     @param trigfunc: trig function to use in mainloop. default to math.sin().
     """
     if gen is None:
@@ -297,6 +297,22 @@ class SmallController(BaseController):
 #     pass
 
 
+class HelloStateError(Exception):
+    pass
+
+
+class AuthError(HelloStateError):
+    """ generic permissions error """
+    pass
+
+
+class LoginError(AuthError):
+    """ specifically, bad username/password
+    """
+
+
+from time import time
+
 class HelloState():
     def __init__(self):
         self.agitation = a = SimpleController('agitation', 0, 20, 1, 0)
@@ -311,7 +327,14 @@ class HelloState():
 
         self.controllers = a, t, ph, d, m, s, l, f, p
 
-    def step(self):
+        self._login_info = {
+            'user1': '12345',
+            'pbstech': '727246'
+        }
+        self._logged_in = False
+        self._last_login = 0
+
+    def step_main_values(self):
         for c in self.controllers:
             c.step()
 
@@ -321,16 +344,21 @@ class HelloState():
             "message": {c.name: c.todict2() for c in self.controllers}
         }
 
+    def get_update(self, json=True):
+        self.step_main_values()
+        return self.getMainValues(json)
+
     def get_xml_main_values(self):
         # Yes, XML really is this goddamn stupid
+        # SubElement and c.toxml modify state in-place.
         root = Element("Reply")
-        root.text = "\n"
+        root.text = ""
         result = SubElement(root, 'Result')
         result.text = "True"
         message = SubElement(root, "Message")
-        message.text = "\n"
+        message.text = ""
         cluster = SubElement(message, "Cluster")
-        cluster.text = "\n"
+        cluster.text = ""
         name = SubElement(cluster, "Name")
         name.text = "Message"
         nelements = SubElement(cluster, "NumElts")
@@ -345,58 +373,23 @@ class HelloState():
         else:
             return xml_dump(self.get_xml_main_values(), None, 'ascii')
 
-
-def xml_dump(obj, root=None, encoding='us-ascii'):
-    if isinstance(obj, dict):
-        obj = _dict_toxml(obj, root)
-    return xml_tostring(obj, encoding)
-
-
-from io import BytesIO
-
-
-def _simple_xml_dump_inner_ascii(b, elem):
-
-    tag = elem.tag.encode('ascii')
-    b.write(tag.join((b"<", b">")))
-
-    txt = elem.text
-    if txt:
-        b.write(txt.encode('ascii'))
-    b.write(b"\n")
-
-    if len(elem):
-        for e in elem:
-            _simple_xml_dump_inner_ascii(b, e)
-    b.write(tag.join((b"</", b">\n")))
-
-
-def simple_xml_dump(root):
-    b = BytesIO()
-    _simple_xml_dump_inner_ascii(b, root)
-    return b.getvalue()
-
-
-def _dict_toxml(mapping, root):
-    if root is None:
-        root = Element("Reply")
-        root.text = "\n"
-    for k, v in mapping.items():
-        e = SubElement(root, k)
-        if isinstance(v, dict):
-            _dict_toxml(v, e)
-            e.text = '\n'
-        else:
-            e.text = str(v)
-    return root
+    def login(self, val1, val2, loader, skipvalidate):
+        user = val1
+        pwd = val2
+        if self._login_info[user.lower()] == pwd:
+            self._logged_in = True
+            self._last_login = time()
+            return True
+        return False
 
 
 def test1():
-    from xml.etree.ElementTree import dump, XML
+    from xml.etree.ElementTree import XML
     xml = HelloState().getMainValues(False)
     xml = XML(xml)
-    print(simple_xml_dump(xml))
-    dump(xml)
+    for line in simple_xml_dump(xml).split():
+        print(line)
+    # dump(xml)
 
 if __name__ == '__main__':
     test1()

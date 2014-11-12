@@ -183,6 +183,13 @@ class HelloApp():
             query = "?&call=" + call
         return self.call_hello(query)
 
+    def call_hello_from_kwargs(self, call, **kwargs):
+        if kwargs:
+            query = ''.join(("?&call=", call, "&", "&".join("%s=%s" % item for item in kwargs.items())))
+        else:
+            query = "?&call=" + call
+        return self.call_hello(query)
+
     def call_hello_from_args(self, args):
         """
         @param args: tuple of (key, value) pairs to build a query string
