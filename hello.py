@@ -35,6 +35,11 @@ class ServerCallError(HelloError):
     pass
 
 
+class TrueError(ServerCallError):
+    """ Server was retarded and returned "True" on a Get call.
+    """
+
+
 class AuthError(ServerCallError):
     """ Authentication Error. Most likely due to
     failure to properly maintain state across multiple
@@ -531,6 +536,10 @@ class HelloXML():
         self.reply = parsed
         self.result = parsed['Result'] == 'True'
         self.data = self.msg = parsed['Message']
+
+        if self.msg == 'True':
+            raise TrueError()
+
         self._parsed = True
 
     # probably unnecessary: access self.data directly
@@ -668,6 +677,12 @@ class BatchListXML():
         self._parse_types = self._parse_types
         self._parsed = False
         name, parsed = self.parse(root)
+
+        # Bad things happen if this code tries to proceed
+        # with a TrueBug response, so raise an error here.
+        if parsed['Message'] == 'True':
+            raise TrueError()
+
         self.parse_dict = {name: parsed}
         self.reply = parsed
         self.result = parsed['Result'] == 'True'

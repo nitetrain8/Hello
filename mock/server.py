@@ -14,6 +14,7 @@ from pysrc.snippets.metas import pfc_meta
 from xml.etree.ElementTree import Element, SubElement, tostring as xml_tostring
 from json import dumps as json_dumps
 import traceback
+import inspect
 import sys
 
 debug = 0
@@ -21,6 +22,40 @@ if debug:
     meta = pfc_meta
 else:
     meta = type
+
+
+def arbitrary_stack_trace(backup=1):
+
+    """
+    Modified from http://mahmoudimus.com/blog/2011/02/arbitrary-stack-trace-in-python/
+    """
+
+    # get the currently frames' stack
+    # this returns the frameobject, the filename,
+    # the line number of the current line, the
+    # function name, a list of lines of context from
+    # the source code, and the index of the current
+    # line within that list.
+
+    stack = inspect.stack()
+
+    # reverse the stack trace so the most recent is at the bottom of the stack
+
+    stack.reverse()
+    stack = stack[backup:]
+    stack_list = []
+
+    try:
+        for s in stack:
+            _, filename, line_no, func_name, code_list, index_in_code_list = s
+            stack_list.append(
+                (filename, line_no, func_name, code_list[index_in_code_list])
+            )
+        rv = ''.join(traceback.format_list(stack_list))
+    finally:
+        # avoid memory leak issues
+        del stack
+    return rv
 
 
 class HelloServerException(Exception):
@@ -94,6 +129,32 @@ class ArgumentError(UnrecognizedCommand):
             self.reply = self.xml_reply()
 
 
+class UnexpectedArgument(UnrecognizedCommand):
+    def __init__(self, what, err_code, rsp_fmt):
+        self.result = "False"
+        self.what = what
+        self.message = "Unexpected Argument(s) %s: %s" % (what, err_code)
+        self.args = self.message,
+        self.err_code = err_code
+        self.rsp_fmt = rsp_fmt
+
+        if rsp_fmt == 'json':
+            self.reply = self.json_reply()
+        else:
+            self.reply = self.xml_reply()
+
+
+class UnknownInternalError(UnrecognizedCommand):
+    def __init__(self):
+        self.result = "False"
+        self.what = "Unknown Error"
+        self.message = ""
+        self.args = self.message,
+        self.err_code = -1
+        self.rsp_fmt = 'json'
+        self.reply = self.json_reply()
+
+
 class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
 
     json_true_response = json_dumps(
@@ -115,13 +176,15 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         except BadQueryString as e:
             self.send_error(400, "Bad query string: \"%s\"" % e.string)
         except ArgumentError as e:
-            self.send_bad_reply(e.reply, e.rsp_fmt)
+            self.send_reply(e.reply, e.rsp_fmt)
         except UnrecognizedCommand as e:
-            self.send_bad_reply(e.reply, e.rsp_fmt)
+            self.send_reply(e.reply, e.rsp_fmt)
         except Exception:
             self.send_error(400, "Bad Path " + self.path)
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
+        finally:
+            self.wfile.flush()
 
     def parse_qs(self, qs, strict=False):
 
@@ -140,16 +203,16 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
 
         call = kws.get('call')
         if call is None:
-            raise ArgumentError("Syntax", 7816, kws.get('json', False), "Syntax Error 7816")
+            raise ArgumentError("Syntax", 7816, 'json' if 'json' in kws else 'xml', "Syntax Error 7816")
 
         return call, kws
 
-    def send_good_reply(self, response, content_type='xml'):
+    def send_reply(self, body, content_type='xml'):
         self.send_response(200)
-        self.send_header("Content-Length", len(response))
+        self.send_header("Content-Length", len(body))
         self.send_header("Content-Type", "application/" + content_type)
         self.end_headers()
-        self.wfile.write(response)
+        self.wfile.write(body)
 
     def send_good_set_reply(self, content_type='xml'):
         if content_type == 'json':
@@ -162,13 +225,26 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         self.send_header("Content-Type", "application/" + content_type)
         self.end_headers()
         self.wfile.write(response)
+        self.wfile.flush()
 
-    def send_bad_reply(self, response, content_type='xml'):
-        self.send_response(200)
-        self.send_header("Content-Length", len(response))
-        self.send_header("Content-Type", "application/" + content_type)
-        self.end_headers()
-        self.wfile.write(response)
+    def send_bad_reply(self, message, content_type='xml'):
+
+        if content_type == 'xml':
+            reply = Element("Reply")
+            result = SubElement(reply, "Result")
+            result.text = "False"
+            message = SubElement(reply, "Message")
+            message.text = message
+            reply = xml_tostring(reply, 'us-ascii')
+        else:
+            reply = json_dumps(
+                {
+                    "Result": "False",
+                    "Message": message
+                }
+            )
+
+        self.send_reply(reply, content_type)
 
     def getmainvalues(self, params, real_mode=False):
         """
@@ -188,13 +264,12 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
             if params:
                 raise Exception
 
-        #: @type: HelloState
-        state = self.server.state
-        state.get_update(json)
+        state = self.server.state.get_update(json)
+        state = state.encode('ascii')
         if json:
-            self.send_good_reply(state, 'json')
+            self.send_reply(state, 'json')
         else:
-            self.send_good_reply(state, 'xml')
+            self.send_reply(state, 'xml')
 
     def login(self, params, real_mode=False):
         try:
@@ -202,11 +277,23 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
             val2 = params.pop("val2")  # pwd
             loader = params.pop("loader")
             skipvalidate = params.pop("skipvalidate")
+            if not real_mode and params:
+                raise ArgumentError(' '.join(params), 1, 'xml')
         except KeyError as e:
             raise ArgumentError(e.args[0], 7115, 'xml', 'Username/password incorrect 7115')
 
         if self.server.state.login(val1, val2, loader, skipvalidate):
             self.send_good_set_reply()
+        else:
+            raise ArgumentError("Unknown", 2, 'xml')
+
+    def logout(self, params, real_mode=False):
+
+        if params and not real_mode:
+            raise ArgumentError(' '.join(params), 1, 'xml')
+
+        if self.server.state.logout():
+            pass
 
 
 class HelloServer(HTTPServer, metaclass=meta):
@@ -217,15 +304,15 @@ class HelloServer(HTTPServer, metaclass=meta):
         self.state = state or HelloState()
 
 
-
-
-
 def test1():
     s = HelloServer()
+
     import threading
     import time
+    import sys
 
-    t = threading.Thread(None, s.handle_request)
+    s.stdout = sys.stdout
+    t = threading.Thread(None, s.serve_forever)
     t.daemon = True
     print("Serving forever")
     t.start()
@@ -236,12 +323,26 @@ def test1():
     print("Requesting")
     c.request("GET", "?&call=getMainValues&json=True")
     print("Getting response")
-    print(c.getresponse().read())
+    stuff = c.getresponse().read()
+    out = "C:\\.replcache\\helloserver.html"
+    with open(out, 'wb') as f:
+        f.write(stuff)
+    import webbrowser
+    webbrowser.open_new_tab(out)
+
+    from urllib.request import urlopen
+    print(urlopen("http://192.168.1.4/webservice/interface/?&call=getMainValues&json=True").read())
+
 
 
 def test2():
     s = HelloServer()
     s.handle_request()
+
+
+def run_forever():
+    s = HelloServer()
+    s.serve_forever()
 
 if __name__ == '__main__':
     try:

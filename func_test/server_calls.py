@@ -10,7 +10,7 @@ from unittest.case import SkipTest
 
 __author__ = 'Nathan Starkweather'
 
-from hello import HelloApp, HelloXML, BatchListXML
+from hello import HelloApp, HelloXML, BatchListXML, parse_xml, parse_rsp
 import unittest
 from os.path import dirname
 from json import loads as json_loads
@@ -21,6 +21,28 @@ with open('\\'.join((here, 'ipaddys.txt')), 'r') as f:
 
 if not ipaddys:
     ipaddys = ['192.168.1.6']
+
+
+class DebugXML(HelloXML):
+    def __init__(self, xml):
+
+        if isinstance(xml, str):
+            root = parse_xml(xml)
+        else:
+            root = parse_rsp(xml)
+
+        self._parse_types = self._parse_types
+        self._parsed = False
+
+        # begin
+        name, parsed = self.parse(root)
+        self.parse_dict = {name: parsed}
+        self.reply = parsed
+        self.result = parsed['Result'] == 'True'
+        self.data = self.msg = parsed['Message']
+        self.truemsg = self.msg == 'True'
+
+        self._parsed = True
 
 
 class TestServerCalls(unittest.TestCase):
@@ -74,7 +96,7 @@ class TestServerCalls(unittest.TestCase):
         "shutdown",
         "logout"
     }
-    ipaddy = '192.168.1.6'
+    ipaddy = '192.168.1.6:80'
     logged_in = False
     calls_seen = None
 
@@ -97,6 +119,11 @@ class TestServerCalls(unittest.TestCase):
         if self.app is None:
             self.app = HelloApp(self.ipaddy)
             self.logged_in = False
+
+    def tearDown(self):
+        if self.app:
+            self.app.close()
+            self.app = None
 
     def _validate_xml_get(self, call, rsp):
         if call == 'getBatches':
@@ -130,7 +157,7 @@ class TestServerCalls(unittest.TestCase):
 
     def _validate_set(self, rsp):
 
-        xml = HelloXML(rsp)
+        xml = DebugXML(rsp)
         result = xml.result
         msg = xml.msg
         if not result:
@@ -175,6 +202,7 @@ class TestServerCalls(unittest.TestCase):
     def test_getMainInfo(self):
         self.do_get_call('getMainInfo')
 
+    @unittest.skip("Takes a long time")
     def test_getTrendData(self):
 
         # for brevity, generate all combos of parameters dynamically.
@@ -239,6 +267,7 @@ class TestServerCalls(unittest.TestCase):
     def test_setTopLight(self):
         self.do_set_call("setTopLight")
 
+    @unittest.skip("Really Loud")
     def test_setUnlockDoor(self):
         # this will cause a failure if the door is
         # interlocked but call works todo- find a way around this

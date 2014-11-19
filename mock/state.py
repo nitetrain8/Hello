@@ -369,7 +369,7 @@ class HelloState():
 
     def getMainValues(self, json=True):
         if json:
-            return json_dumps(self.get_dict_main_values(), indent=4)
+            return json_dumps(self.get_dict_main_values(), indent="\t")
         else:
             return xml_dump(self.get_xml_main_values(), None, 'ascii')
 
@@ -381,6 +381,10 @@ class HelloState():
             self._last_login = time()
             return True
         return False
+
+    def logout(self):
+        self._logged_in = False
+        return True
 
 
 def test1():

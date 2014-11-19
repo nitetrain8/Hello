@@ -83,6 +83,7 @@ def _dict_toxml(mapping, root):
 
 import inspect
 
+
 def lineno():
     """
     Easily retrieve the current line number
