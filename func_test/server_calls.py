@@ -24,6 +24,12 @@ if not ipaddys:
 
 
 class DebugXML(HelloXML):
+    """ copy of helloxml, but doesn't raise
+    TrueError. This is used since the test fixture
+    uses the xml-to-dict parser to parse both set
+    and get responses.
+    """
+    # noinspection PyMissingConstructor
     def __init__(self, xml):
 
         if isinstance(xml, str):

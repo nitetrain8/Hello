@@ -538,7 +538,7 @@ class HelloXML():
         self.data = self.msg = parsed['Message']
 
         if self.msg == 'True':
-            raise TrueError()
+            raise TrueError("Expected response, got \"True\"")
 
         self._parsed = True
 

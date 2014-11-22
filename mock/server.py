@@ -24,7 +24,7 @@ else:
     meta = type
 
 
-def arbitrary_stack_trace(backup=1):
+def _stack_trace():
 
     """
     Modified from http://mahmoudimus.com/blog/2011/02/arbitrary-stack-trace-in-python/
@@ -37,26 +37,12 @@ def arbitrary_stack_trace(backup=1):
     # the source code, and the index of the current
     # line within that list.
 
-    stack = inspect.stack()
+    rv = traceback.format_list(traceback.extract_stack())
 
-    # reverse the stack trace so the most recent is at the bottom of the stack
-
-    stack.reverse()
-    stack = stack[backup:]
-    stack_list = []
-
-    try:
-        for s in stack:
-            _, filename, line_no, func_name, code_list, index_in_code_list = s
-            stack_list.append(
-                (filename, line_no, func_name, code_list[index_in_code_list])
-            )
-        rv = ''.join(traceback.format_list(stack_list))
-    finally:
-        # avoid memory leak issues
-        del stack
     return rv
 
+
+E_UNEXPECTED_ARG = 1
 
 class HelloServerException(Exception):
     pass
@@ -130,12 +116,12 @@ class ArgumentError(UnrecognizedCommand):
 
 
 class UnexpectedArgument(UnrecognizedCommand):
-    def __init__(self, what, err_code, rsp_fmt):
+    def __init__(self, what, rsp_fmt):
         self.result = "False"
         self.what = what
-        self.message = "Unexpected Argument(s) %s: %s" % (what, err_code)
+        self.err_code = E_UNEXPECTED_ARG
+        self.message = "Unexpected Argument(s) %s: %s" % (what, self.err_code)
         self.args = self.message,
-        self.err_code = err_code
         self.rsp_fmt = rsp_fmt
 
         if rsp_fmt == 'json':
@@ -145,10 +131,12 @@ class UnexpectedArgument(UnrecognizedCommand):
 
 
 class UnknownInternalError(UnrecognizedCommand):
-    def __init__(self):
+    def __init__(self, msg=None):
         self.result = "False"
         self.what = "Unknown Error"
-        self.message = ""
+        self.message = _stack_trace()
+        if msg:
+            self.message = "\n".join((msg, self.message))
         self.args = self.message,
         self.err_code = -1
         self.rsp_fmt = 'json'
@@ -163,8 +151,9 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
     ).encode('ascii')
 
     xml_true_response = '<?xml version="1.0" encoding="us-ascii" standalone="no" ?>' \
-                        '<Reply><Result>True</Result><Message>True</Message></Reply>'
-    xml_true_response = xml_true_response.encode('us-ascii')
+                        '<Reply><Result>True</Result><Message>True</Message></Reply>'.encode('ascii')
+
+    allow_json = False
 
     def do_GET(self):
         try:
@@ -212,6 +201,17 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         self.send_header("Content-Length", len(body))
         self.send_header("Content-Type", "application/" + content_type)
         self.end_headers()
+        if isinstance(body, str):
+            body = body.encode("ascii")
+        self.wfile.write(body)
+
+    def send_reply2(self, code, body, content_type='xml'):
+        self.send_response(code)
+        self.send_header("Content-Length", len(body))
+        self.send_header("Content-Type", "application/" + content_type)
+        self.end_headers()
+        if isinstance(body, str):
+            body = body.encode("ascii")
         self.wfile.write(body)
 
     def send_good_set_reply(self, content_type='xml'):
@@ -265,7 +265,10 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
                 raise Exception
 
         state = self.server.state.get_update(json)
-        state = state.encode('ascii')
+        if not state:
+            raise UnknownInternalError("Failed tro get update from server")
+        if isinstance(state, str):
+            state = state.encode('ascii')
         if json:
             self.send_reply(state, 'json')
         else:
@@ -293,7 +296,32 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
             raise ArgumentError(' '.join(params), 1, 'xml')
 
         if self.server.state.logout():
-            pass
+            return
+        else:
+            raise UnknownInternalError("Failed to logout")
+
+    def getversion(self, params, real_mode=False):
+
+        if self.allow_json:
+            json = params.pop('json', "")
+            if not json or json.lower() in {"0", "false"}:
+                json = False
+            else:
+                json = True
+        else:
+            json = False
+
+        if not real_mode:
+            if params:
+                raise ArgumentError(' '.join(params), 1, 'xml')
+
+        version = self.server.state.getversion(json)
+        if version:
+            self.send_reply(version, 'xml')
+        else:
+            raise UnknownInternalError("Error Getting Version Info")
+
+    def getmaininfo(self): pass
 
 
 class HelloServer(HTTPServer, metaclass=meta):

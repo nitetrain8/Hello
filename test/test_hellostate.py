@@ -19,10 +19,11 @@ test_dir = dirname(__file__)
 temp_dir = join(test_dir, "temp")
 test_input = join(test_dir, "test_input")
 
-
 def setUpModule():
     # Generate test input directory just in case
-    # it doesn't already exist. (For Convenience). 
+    # it doesn't already exist. (For Convenience).
+
+
     for d in (temp_dir, test_input):
         try:
             makedirs(d)
@@ -38,7 +39,7 @@ def tearDownModule():
         pass
 
 
-from hello.mock.state import SimpleController, TwoWayController, SmallController, HelloState
+from hello.mock.state import StandardController, TwoWayController, SmallController, HelloState
 from json import loads as json_loads, dumps as json_dumps
 
 class TestStateJson(unittest.TestCase):
@@ -47,7 +48,7 @@ class TestStateJson(unittest.TestCase):
         @return: None
         @rtype: None
         """
-        c = SimpleController("TestSimpleController")
+        c = StandardController("TestSimpleController")
         c.pv = 1
         c.sp = 2
         c.man = 3
@@ -64,7 +65,7 @@ class TestStateJson(unittest.TestCase):
             'interlocked': 6
         }
 
-        actual = c.todict()
+        actual = c.mv_todict()
 
         self.assertEqual(expected, actual)
 
@@ -72,8 +73,8 @@ class TestStateJson(unittest.TestCase):
         c = TwoWayController("TestTwoWayController")
         c.pv = 1
         c.sp = 2
-        c.manup = 3
-        c.mandown = 4
+        c.manUp = 3
+        c.manDown = 4
         c.mode = 5
         c.error = 6
         c.interlocked = 7
@@ -88,7 +89,7 @@ class TestStateJson(unittest.TestCase):
             'interlocked': 7
         }
 
-        actual = c.todict()
+        actual = c.mv_todict()
 
         self.assertEqual(expected, actual)
 
@@ -105,7 +106,7 @@ class TestStateJson(unittest.TestCase):
             'error': 4
         }
 
-        actual = c.todict()
+        actual = c.mv_todict()
 
         self.assertEqual(expected, actual)
 
@@ -119,8 +120,8 @@ class TestStateJson(unittest.TestCase):
         s.agitation.sp = 6
         s.do.error = 7
         s.do.interlocked = 8
-        s.do.mandown = 9
-        s.do.manup = 10
+        s.do.manDown = 9
+        s.do.manUp = 10
         s.do.mode = 11
         s.do.pv = 12
         s.do.sp = 13
@@ -140,8 +141,8 @@ class TestStateJson(unittest.TestCase):
         s.maingas.sp = 27
         s.ph.error = 28
         s.ph.interlocked = 29
-        s.ph.mandown = 30
-        s.ph.manup = 31
+        s.ph.manDown = 30
+        s.ph.manUp = 31
         s.ph.mode = 32
         s.ph.pv = 33
         s.ph.sp = 34
@@ -165,7 +166,7 @@ class TestStateJson(unittest.TestCase):
         expected = {
             "result": "True",
             "message": {
-                'agitation': {
+                'Agitation': {
                     'error': 1,
                     'interlocked': 2,
                     'man': 3,
@@ -174,7 +175,7 @@ class TestStateJson(unittest.TestCase):
                     'sp': 6,
                 },
 
-                'do': {
+                'DO': {
                     'error': 7,
                     'interlocked': 8,
                     'manDown': 9,
@@ -184,21 +185,21 @@ class TestStateJson(unittest.TestCase):
                     'sp': 13,
                 },
 
-                'condensor': {
+                'Condensor': {
                     'error': 14,
                     'mode': 15,
                     'pv': 16,
 
                 },
 
-                'level': {
+                'Level': {
                     'error': 18,
                     'mode': 19,
                     'pv': 20,
 
                 },
 
-                'maingas': {
+                'MainGas': {
                     'error': 22,
                     'interlocked': 23,
                     'man': 24,
@@ -207,7 +208,7 @@ class TestStateJson(unittest.TestCase):
                     'sp': 27,
                 },
 
-                'ph': {
+                'pH': {
                     'error': 28,
                     'interlocked': 29,
                     'manDown': 30,
@@ -217,13 +218,13 @@ class TestStateJson(unittest.TestCase):
                     'sp': 34,
                 },
 
-                'pressure': {
+                'Pressure': {
                     'error': 35,
                     'mode': 36,
                     'pv': 37,
                 },
 
-                'secondaryheat': {
+                'SecondaryHeat': {
                     'error': 39,
                     'interlocked': 40,
                     'man': 41,
@@ -232,7 +233,7 @@ class TestStateJson(unittest.TestCase):
                     'sp': 44,
                 },
 
-                'temperature': {
+                'Temperature': {
                     'error': 45,
                     'interlocked': 46,
                     'man': 47,
@@ -247,14 +248,19 @@ class TestStateJson(unittest.TestCase):
 
         try:
             self.assertEqual(expected, actual)
-        except:
+        except self.failureException:
             # the standard dict assert equal message sucks,
             # so if the test fails, loop manually here to get a
             # better error message
-            self.assertEqual(expected.keys(), actual.keys())
+            self.assertEqual(set(expected.keys()), set(actual.keys()))
             emsg = expected['message']
             amsg = actual['message']
-            self.assertEqual(emsg.keys(), amsg.keys())
+            try:
+                self.assertEqual(set(emsg.keys()), set(amsg.keys()))
+            except self.failureException:
+                for key in emsg.keys():
+                    self.assertIn(key, amsg)
+                raise
             for ekey in emsg:
                 self.assertIn(ekey, amsg)
                 eval = emsg[ekey]
@@ -263,7 +269,7 @@ class TestStateJson(unittest.TestCase):
                     self.assertIn(ekey2, aval)
                     eval2 = eval[ekey2]
                     aval2 = aval[ekey2]
-                    self.assertEqual(eval2, aval2)
+                    self.assertEqual(eval2, aval2, " ".join((ekey, ekey2)))
             raise
 
         # these won't match, because dict order is arbitrary
@@ -309,6 +315,424 @@ class TestMockPID(unittest.TestCase):
             self.assertEqual(d(i + 2), i + 1)
         for i in range(30):
             self.assertEqual(d(i + 3), i + 2)
+
+
+from hello.mock.util import HelloXMLGenerator, xml_tostring
+from xml.etree.ElementTree import Element, XML
+from itertools import zip_longest
+
+
+class TestXMLUtilities(unittest.TestCase):
+    """ Test functions related to generating XML/json from
+    arbitrary python object trees.
+    """
+
+    def assertElementEqual(self, first, second, msg=None):
+        if msg is None:
+            msg = ''
+        self.assertIsInstance(first, Element, msg + "First argument is not an Element")
+        self.assertIsInstance(second, Element, msg + "First argument is not an Element")
+
+        # compare basic attributes
+        self.assertEqual(first.tag, second.tag, msg + "Element tags do not match")
+        self.assertEqual(first.text, second.text, msg + "Element text does not match")
+        self.assertEqual(first.attrib, second.attrib, msg + "Element attributes do not match")
+        self.assertEqual(first.tail, second.tail, msg + "Element tails do not match")
+
+        for f, s in zip_longest(first, second):
+            self.assertEqual(f, s, msg)
+
+    def setUp(self):
+        self.addTypeEqualityFunc(Element, self.assertElementEqual)
+        self.generator = HelloXMLGenerator()
+
+    def test_xmlgenerator_strotoxml(self):
+        """
+        Basic test that all the individual parsing functions work.
+        """
+        strtoxml = self.generator.str_toxml
+
+        actual_root = Element("TestRoot")
+        strtoxml("Foo", "test1", actual_root)
+        strtoxml("Bar", "test2", actual_root)
+        strtoxml("Baz", "test3", actual_root)
+
+        expected = XML(
+        """<TestRoot>
+        <String>
+         <Name>test1</Name>
+         <Val>Foo</Val>
+        </String>
+        <String>
+         <Name>test2</Name>
+         <Val>Bar</Val>
+        </String>
+        <String>
+         <Name>test3</Name>
+         <Val>Baz</Val>
+        </String>
+        </TestRoot>""".replace(" ", "").replace("\n", "")
+        )
+
+        self.assertEqual(expected, actual_root)
+
+    def test_xmlgenerator_intoxml(self):
+        """
+        Basic test that all the individual parsing functions work.
+        """
+        testfunc = self.generator.int_toxml
+
+        actual_root = Element("TestRoot")
+        testfunc(1, "test1", actual_root)
+        testfunc(2, "test2", actual_root)
+        testfunc(3, "test3", actual_root)
+
+        expected = XML(
+            """<TestRoot>
+            <U32>
+             <Name>test1</Name>
+             <Val>1</Val>
+            </U32>
+            <U32>
+             <Name>test2</Name>
+             <Val>2</Val>
+            </U32>
+            <U32>
+             <Name>test3</Name>
+             <Val>3</Val>
+            </U32>
+            </TestRoot>""".replace(" ", "").replace("\n", "")
+        )
+
+        self.assertEqual(expected, actual_root)
+
+    def test_xmlgenerator_floattoxml(self):
+        """
+        Basic test that all the individual parsing functions work.
+        """
+        testfunc = self.generator.float_toxml
+
+        actual_root = Element("TestRoot")
+        testfunc(1.0, "test1", actual_root)
+        testfunc(2.0, "test2", actual_root)
+        testfunc(3.0, "test3", actual_root)
+
+        expected = XML(
+            """<TestRoot>
+            <SGL>
+             <Name>test1</Name>
+             <Val>1.0</Val>
+            </SGL>
+            <SGL>
+             <Name>test2</Name>
+             <Val>2.0</Val>
+            </SGL>
+            <SGL>
+             <Name>test3</Name>
+             <Val>3.0</Val>
+            </SGL>
+            </TestRoot>""".replace(" ", "").replace("\n", "")
+        )
+
+        self.assertEqual(expected, actual_root)
+        
+    def test_xmlgenerator_listtoxml(self):
+        testfunc = self.generator.list_toxml
+        
+        actual_root = Element("TestRoot")
+        l1 = [
+            ('list1.1', 1),
+            ('list1.2', 2),
+            ('list1.3', 3)
+        ]
+        l2 = [
+            ('list2.1', 1.5),
+            ('list2.2', 2.5),
+            ('list2.3', 3.5),
+            ('list2.4', 4.5)
+        ]
+        l3 = [
+            ('list3.1', 'one'),
+            ('list3.2', 'two'),
+            ('list3.3', 'three'),
+            ('list3.4', 'four'),
+            ('list3.5', 'five')
+        ]
+        testfunc(l1, "test1", actual_root)
+        testfunc(l2, "test2", actual_root)
+        testfunc(l3, "test3", actual_root)
+
+        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+
+        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1)
+        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2)
+        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3)
+
+        xml = """<TestRoot>
+            <Cluster>
+             <Name>test1</Name>
+             <NumElts>3</NumElts>
+            %s
+            </Cluster>
+            <Cluster>
+             <Name>test2</Name>
+             <NumElts>4</NumElts>
+             %s
+            </Cluster>
+            <Cluster>
+             <Name>test3</Name>
+             <NumElts>5</NumElts>
+             %s
+            </Cluster>
+            </TestRoot>""" % (sub1, sub2, sub3)
+        xml = xml.replace(" ", "").replace("\n", "")
+        expected = XML(xml)
+
+        self.assertEqual(expected, actual_root)
+
+    def test_xmlgenerator_tupletoxml(self):
+        # same test function as above, but with tuples
+        testfunc = self.generator.list_toxml
+
+        actual_root = Element("TestRoot")
+        l1 = (
+            ('list1.1', 1),
+            ('list1.2', 2),
+            ('list1.3', 3)
+        )
+        l2 = (
+            ('list2.1', 1.5),
+            ('list2.2', 2.5),
+            ('list2.3', 3.5),
+            ('list2.4', 4.5)
+        )
+        l3 = (
+            ('list3.1', 'one'),
+            ('list3.2', 'two'),
+            ('list3.3', 'three'),
+            ('list3.4', 'four'),
+            ('list3.5', 'five')
+        )
+        testfunc(l1, "test1", actual_root)
+        testfunc(l2, "test2", actual_root)
+        testfunc(l3, "test3", actual_root)
+
+        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+
+        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1)
+        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2)
+        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3)
+
+        xml = """<TestRoot>
+            <Cluster>
+             <Name>test1</Name>
+             <NumElts>3</NumElts>
+            %s
+            </Cluster>
+            <Cluster>
+             <Name>test2</Name>
+             <NumElts>4</NumElts>
+             %s
+            </Cluster>
+            <Cluster>
+             <Name>test3</Name>
+             <NumElts>5</NumElts>
+             %s
+            </Cluster>
+            </TestRoot>""" % (sub1, sub2, sub3)
+        xml = xml.replace(" ", "").replace("\n", "")
+        expected = XML(xml)
+
+        self.assertEqual(expected, actual_root)
+
+    def test_xmlgenerator_dicttoxml(self):
+        testfunc = self.generator.dict_toxml
+
+        actual_root = Element("TestRoot")
+        l1 = dict([
+            ('list1.1', 1),
+            ('list1.2', 2),
+            ('list1.3', 3)
+        ])
+        l2 = dict([
+            ('list2.1', 1.5),
+            ('list2.2', 2.5),
+            ('list2.3', 3.5),
+            ('list2.4', 4.5)
+        ])
+        l3 = dict([
+            ('list3.1', 'one'),
+            ('list3.2', 'two'),
+            ('list3.3', 'three'),
+            ('list3.4', 'four'),
+            ('list3.5', 'five')
+        ])
+        testfunc(l1, "test1", actual_root)
+        testfunc(l2, "test2", actual_root)
+        testfunc(l3, "test3", actual_root)
+
+        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+
+        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1.items())
+        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2.items())
+        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3.items())
+
+        xml = """<TestRoot>
+            <Cluster>
+             <Name>test1</Name>
+             <NumElts>3</NumElts>
+            %s
+            </Cluster>
+            <Cluster>
+             <Name>test2</Name>
+             <NumElts>4</NumElts>
+             %s
+            </Cluster>
+            <Cluster>
+             <Name>test3</Name>
+             <NumElts>5</NumElts>
+             %s
+            </Cluster>
+            </TestRoot>""" % (sub1, sub2, sub3)
+        xml = xml.replace(" ", "").replace("\n", "")
+        expected = XML(xml)
+
+        # this is ugly, but the easiest way of checking whether
+        # the resulting everything is ordered or not.
+        # of course, it relies on HelloXML working properly.
+        # init is overridden to prevent the auto parsing.
+        from hello.hello import HelloXML
+        class DebugXML(HelloXML):
+            def __init__(self):
+                pass
+
+        exp_dict = DebugXML().parse(expected)[1]
+        actual_dict = DebugXML().parse(actual_root)[1]
+        self.assertEqual(actual_dict, exp_dict)
+
+        # self.assertUnorderedXMLEqual(expected, actual_root)
+
+    def test_xmlgenerator_odtoxml(self):
+        from collections import OrderedDict
+        testfunc = self.generator.dict_toxml
+
+        actual_root = Element("TestRoot")
+        l1 = OrderedDict([
+            ('list1.1', 1),
+            ('list1.2', 2),
+            ('list1.3', 3)
+        ])
+        l2 = OrderedDict([
+            ('list2.1', 1.5),
+            ('list2.2', 2.5),
+            ('list2.3', 3.5),
+            ('list2.4', 4.5)
+        ])
+        l3 = OrderedDict([
+            ('list3.1', 'one'),
+            ('list3.2', 'two'),
+            ('list3.3', 'three'),
+            ('list3.4', 'four'),
+            ('list3.5', 'five')
+        ])
+        testfunc(l1, "test1", actual_root)
+        testfunc(l2, "test2", actual_root)
+        testfunc(l3, "test3", actual_root)
+
+        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+
+        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1.items())
+        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2.items())
+        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3.items())
+
+        xml = """<TestRoot>
+            <Cluster>
+             <Name>test1</Name>
+             <NumElts>3</NumElts>
+            %s
+            </Cluster>
+            <Cluster>
+             <Name>test2</Name>
+             <NumElts>4</NumElts>
+             %s
+            </Cluster>
+            <Cluster>
+             <Name>test3</Name>
+             <NumElts>5</NumElts>
+             %s
+            </Cluster>
+            </TestRoot>""" % (sub1, sub2, sub3)
+        xml = xml.replace(" ", "").replace("\n", "")
+        expected = XML(xml)
+
+        # because ordered dict should be ordered,
+        # use the standard ordered comparison function
+        self.assertEqual(expected, actual_root)
+
+    def test_xmlgenerator_itertoxml(self):
+        # same test function as above, but with tuples
+        testfunc = self.generator.list_toxml
+
+        actual_root = Element("TestRoot")
+        l1 = (
+            ('list1.1', 1),
+            ('list1.2', 2),
+            ('list1.3', 3)
+        )
+        l2 = (
+            ('list2.1', 1.5),
+            ('list2.2', 2.5),
+            ('list2.3', 3.5),
+            ('list2.4', 4.5)
+        )
+        l3 = (
+            ('list3.1', 'one'),
+            ('list3.2', 'two'),
+            ('list3.3', 'three'),
+            ('list3.4', 'four'),
+            ('list3.5', 'five')
+        )
+
+        def iterator(lst):
+            for item in lst:
+                yield item
+
+        i1 = iterator(l1)
+        i2 = iterator(l2)
+        i3 = iterator(l3)
+
+        testfunc(l1, "test1", actual_root)
+        testfunc(l2, "test2", actual_root)
+        testfunc(l3, "test3", actual_root)
+
+        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+
+        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in i1)
+        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in i2)
+        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in i3)
+
+        xml = """<TestRoot>
+            <Cluster>
+             <Name>test1</Name>
+             <NumElts>3</NumElts>
+            %s
+            </Cluster>
+            <Cluster>
+             <Name>test2</Name>
+             <NumElts>4</NumElts>
+             %s
+            </Cluster>
+            <Cluster>
+             <Name>test3</Name>
+             <NumElts>5</NumElts>
+             %s
+            </Cluster>
+            </TestRoot>""" % (sub1, sub2, sub3)
+        xml = xml.replace(" ", "").replace("\n", "")
+        expected = XML(xml)
+
+        self.assertEqual(expected, actual_root)
+
 
 if __name__ == '__main__':
     unittest.main()

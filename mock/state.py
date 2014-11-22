@@ -6,7 +6,7 @@ Created in: PyCharm Community Edition
 
 
 """
-from hello.mock.util import nextroutine, xml_dump, simple_xml_dump
+from hello.mock.util import nextroutine, xml_tostring, simple_xml_dump, obj_to_xml
 
 __author__ = 'Nathan Starkweather'
 
@@ -125,7 +125,14 @@ def multiwave(waves, middle=0):
 
 class BaseController():
 
-    _name_to_lv_type = {
+    """ Base controller for Backend controllers.
+    Controllers know:
+     - Their current values
+     - The appropriate units for each value (for getMainInfo)
+     - How to turn the above into dict objects or Element trees.
+    """
+
+    name_to_lv_type = {
         'pv': 'SGL',
         'sp': 'SGL',
         'man': 'SGL',
@@ -142,12 +149,18 @@ class BaseController():
         @type name: str
         @return:
         """
-        self.pv = 0
         self.name = name
         self._history = []
-        self._pvgenerator = lambda: (0, 0)
 
+        # these are just placeholders, and will be overridden
+        # by subclasses.
+        self.pv = 0
+        self._pvgenerator = lambda: (0, 0)
         self.mv_attrs = ("pv",)
+        self.mi_attrs = ("pvunit",)
+
+    def mi_toxml(self):
+        pass
 
     def set_pvgen(self, gen):
         self._pvgenerator = gen
@@ -165,13 +178,13 @@ class BaseController():
         self._history.append(rv)
         return rv  # t, pv
 
-    def todict(self):
+    def mv_todict(self):
         return {'pv': self.pv}
 
-    def todict2(self):
+    def mv_todict2(self):
         return {attr: getattr(self, attr) for attr in self.mv_attrs}
 
-    def toxml(self, root=None):
+    def mv_toxml(self, root=None):
         if root is None:
             cluster = Element('Cluster')
         else:
@@ -188,7 +201,7 @@ class BaseController():
         # to find the proper "type" label to wrap
         # the element in.
         for attr in self.mv_attrs:
-            lv_type = self._name_to_lv_type[attr]
+            lv_type = self.name_to_lv_type[attr]
             typ = SubElement(cluster, lv_type)
             typ.text = "\n"
 
@@ -199,13 +212,14 @@ class BaseController():
             if lv_type == 'SGL':
                 val.text = "%.5f" % getattr(self, attr)
             else:
-                val.text = "%d" % getattr(self, attr)
+                val.text = "%s" % getattr(self, attr)
 
         return cluster
 
 
-class SimpleController(BaseController):
-    def __init__(self, name, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0):
+class StandardController(BaseController):
+    def __init__(self, name, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0,
+                 pvunit='', manunit='', manname=''):
 
         super().__init__(name)
         self.pv = pv
@@ -214,12 +228,15 @@ class SimpleController(BaseController):
         self.mode = mode
         self.error = error
         self.interlocked = interlocked
+        self.pvunit = pvunit
+        self.manunit = manunit
+        self.manname = manname
 
         self.mv_attrs = 'pv', 'sp', 'man', 'mode', 'error', 'interlocked'
 
         self.set_pvgen(sin_wave(5, 30, 15))
 
-    def todict(self):
+    def mv_todict(self):
         return {
             'pv': self.pv,
             'sp': self.sp,
@@ -231,8 +248,10 @@ class SimpleController(BaseController):
 
 
 class TwoWayController(BaseController):
-    def __init__(self, name, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, interlocked=0):
-        super().__init__(name)
+    def __init__(self, name, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, 
+                 interlocked=0, pvunit='', manupunit='', mandownunit='', manupname='',
+                 mandownname=''):
+        BaseController.__init__(self, name)
         self.pv = pv
         self.sp = sp
         self.manUp = manup
@@ -240,12 +259,17 @@ class TwoWayController(BaseController):
         self.mode = mode
         self.error = error
         self.interlocked = interlocked
+        self.pvpunit = pvunit
+        self.manupunit = manupunit
+        self.mandownunit = mandownunit
+        self.manupname = manupname
+        self.mandownname = mandownname
 
         self.mv_attrs = 'pv', 'sp', 'manUp', 'manDown', 'mode', 'error', 'interlocked'
 
         self.set_pvgen(sin_wave(3, 60, 50))
 
-    def todict(self):
+    def mv_todict(self):
         return {
             'pv': self.pv,
             'sp': self.sp,
@@ -258,43 +282,94 @@ class TwoWayController(BaseController):
 
 
 class SmallController(BaseController):
-    def __init__(self, name, pv=0, sp=0, mode=0, error=0):
-        super().__init__(name)
+    def __init__(self, name, pv=0, sp=0, mode=0, error=0, pvunit=""):
+        BaseController.__init__(self, name)
         self.pv = pv
         self.sp = sp
         self.mode = mode
         self.error = error
+        self.pvunit = pvunit
 
         self.mv_attrs = 'pv', 'mode', 'error'
 
         self.set_pvgen(sin_wave(1, 10, 5))
 
-    def todict(self):
+    def mv_todict(self):
         return {
             'pv': self.pv,
             'mode': self.mode,
             'error': self.error
         }
 
-#
-# class Agitation(SimpleController):
-#     pass
-#
-#
-# class Temperature(SimpleController):
-#     pass
-#
-#
-# class pH(TwoWayController):
-#     pass
-#
-#
-# class DO(TwoWayController):
-#     pass
-#
-#
-# class MainGas(SimpleController):
-#     pass
+
+class AgitationController(StandardController):
+    def __init__(self, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0):
+        StandardController.__init__(self, "Agitation", pv, sp, man, mode, error, interlocked)
+        self.pvunit = "RPM"
+        self.manunit = "%"
+        self.manname = "Power"
+
+
+class TemperatureController(StandardController):
+    def __init__(self, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0):
+        StandardController.__init__(self, "Temperature", pv, sp, man, mode, error, interlocked)
+        self.pvunit = "\xb0C"
+        self.manunit = "%"
+        self.manname = "Heater Duty"
+
+
+class pHController(TwoWayController):
+    def __init__(self, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, interlocked=0):
+        TwoWayController.__init__(self, "pH", pv, sp, manup, mandown, mode, error, interlocked)
+        self.pvunit = "pH"
+        self.manupunit = "%"
+        self.mandownunit = "%"
+        self.manupname = "Base"
+        self.mandownname = "CO_2"
+
+
+class DOController(TwoWayController):
+    def __init__(self, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, interlocked=0):
+        TwoWayController.__init__(self, "DO", pv, sp, manup, mandown, mode, error, interlocked)
+        self.pvunit = "%"
+        self.manupunit = "mL/min"
+        self.mandownunit = "%"
+        self.manupname = "O_2"
+        self.mandownname = "N_2"
+
+
+class MainGasController(StandardController):
+    def __init__(self, pv=0, sp=0, mode=0, error=0, interlocked=0):
+        StandardController.__init__(self, "MainGas", pv, sp, mode, error, interlocked)
+        self.pvunit = ""
+        self.manunit = "L/min"
+        self.manname = "Gas Flow"
+
+
+class LevelController(SmallController):
+    def __init__(self, pv=0, sp=0, mode=0, error=0):
+        SmallController.__init__(self, "Level", pv, sp, mode, error)
+        self.pvunit = "L"
+
+
+class FilterOvenController(SmallController):
+    def __init__(self, pv=0, sp=0, mode=0, error=0):
+        SmallController.__init__(self, "Condensor", pv, sp, mode, error)
+        self.pvunit = "\xb0C"
+
+
+class PressureController(SmallController):
+    def __init__(self, pv=0, sp=0, mode=0, error=0):
+        SmallController.__init__(self, "Pressure", pv, sp, mode, error)
+        self.pvunit = "psi"
+
+
+class SecondaryHeatController(StandardController):
+    def __init__(self, pv=0, sp=0, mode=0, error=0, interlocked=0):
+        StandardController.__init__(self, "SecondaryHeat", pv, sp, mode, error, interlocked)
+        self.pvunit = "\xb0C"
+        self.manunit = "%"
+        self.manname = "Power"
 
 
 class HelloStateError(Exception):
@@ -313,18 +388,29 @@ class LoginError(AuthError):
 
 from time import time
 
+
+version_info = {
+    "RIO": "V12.1",
+    "Server": "V3.1",
+    "Model": "PBS 3",
+    "Database": "V2.2",
+    "Serial Number": "01459C77"
+}
+
+
 class HelloState():
     def __init__(self):
-        self.agitation = a = SimpleController('agitation', 0, 20, 1, 0)
-        self.temperature = t = SimpleController('temperature', 30, 37, 0, 0)
-        self.ph = ph = TwoWayController('ph', 7, 7.1, 5, 5, 0)
-        self.do = d = TwoWayController('do', 50, 70, 15, 150, 0)
-        self.maingas = m = SimpleController('maingas', 0, 0, 0.5, 1)
-        self.secondaryheat = s = SimpleController('secondaryheat', 30, 37, 0, 0)
-        self.level = l = SmallController('level', 3)
-        self.filteroven = f = SmallController('condensor', 40, 50)
-        self.pressure = p = SmallController('pressure', 0, 0, 0)
+        self.agitation = a = AgitationController(0, 20, 1, 0, 0, 0)
+        self.temperature = t = TemperatureController(30, 37, 0, 0, 0, 0)
+        self.ph = ph = pHController(7, 7.1, 5, 5, 0)
+        self.do = d = DOController(50, 70, 15, 150, 0)
+        self.maingas = m = MainGasController(0, 0, 0.5, 1)
+        self.secondaryheat = s = SecondaryHeatController(30, 37, 0, 0)
+        self.level = l = LevelController(3)
+        self.filteroven = f = FilterOvenController(40, 50)
+        self.pressure = p = PressureController(0, 0, 0)
 
+        # the short local names are for brevity.
         self.controllers = a, t, ph, d, m, s, l, f, p
 
         self._login_info = {
@@ -334,6 +420,8 @@ class HelloState():
         self._logged_in = False
         self._last_login = 0
 
+        self._version_info = version_info.copy()
+
     def step_main_values(self):
         for c in self.controllers:
             c.step()
@@ -341,7 +429,7 @@ class HelloState():
     def get_dict_main_values(self):
         return {
             "result": "True",
-            "message": {c.name: c.todict2() for c in self.controllers}
+            "message": {c.name: c.mv_todict2() for c in self.controllers}
         }
 
     def get_update(self, json=True):
@@ -350,7 +438,7 @@ class HelloState():
 
     def get_xml_main_values(self):
         # Yes, XML really is this goddamn stupid
-        # SubElement and c.toxml modify state in-place.
+        # SubElement and c.mv_toxml modify state in-place.
         root = Element("Reply")
         root.text = ""
         result = SubElement(root, 'Result')
@@ -364,14 +452,14 @@ class HelloState():
         nelements = SubElement(cluster, "NumElts")
         nelements.text = str(len(self.controllers))
         for c in self.controllers:
-            c.toxml(cluster)
+            c.mv_toxml(cluster)
         return root
 
     def getMainValues(self, json=True):
         if json:
             return json_dumps(self.get_dict_main_values(), indent="\t")
         else:
-            return xml_dump(self.get_xml_main_values(), None, 'ascii')
+            return xml_tostring(self.get_xml_main_values(), None, 'ascii')
 
     def login(self, val1, val2, loader, skipvalidate):
         user = val1
@@ -385,6 +473,22 @@ class HelloState():
     def logout(self):
         self._logged_in = False
         return True
+
+    def getversion(self, json=False):
+        reply = {
+            "Result": "True",
+            "Message": {
+                "Versions": self._version_info
+            }
+        }
+
+        if json:
+            rv = json_dumps(reply)
+        else:
+            rv = obj_to_xml(reply, "Versions")
+
+        return rv
+
 
 
 def test1():
