@@ -40,9 +40,11 @@ def tearDownModule():
 
 
 from hello.mock.state import StandardController, TwoWayController, SmallController, HelloState
+from hello.mock import state as hello_state
 from json import loads as json_loads, dumps as json_dumps
 
-class TestStateJson(unittest.TestCase):
+
+class TestState(unittest.TestCase):
     def test_SimpleController(self):
         """
         @return: None
@@ -283,6 +285,215 @@ class TestStateJson(unittest.TestCase):
         self.assertEqual(expected_from_json, actual_from_json)
 
 
+class TestStateMainInfo(unittest.TestCase):
+
+    def setUp(self):
+        self.root_xml = "<TestRoot>%s</TestRoot>"
+
+    def assertXMLEqual(self, first, second, msg=None):
+
+        try:
+            self.assertEqual(first, second, msg)
+        except self.failureException:
+            if len(first) != len(second):
+                print("First len != second len")
+            print(first)
+            print(second)
+            diffs = [None] * min(len(first), len(second))
+            for i, (c1, c2) in enumerate(zip(first, second)):
+                if c1 != c2:
+                    diffs[i] = True
+
+            for d in diffs:
+                if d:
+                    print("^", end="")
+                else:
+                    print(" ", end="")
+            raise
+
+    def test_agitation(self):
+        expected_ag = """
+<Cluster>
+<Name>Agitation</Name>
+<NumElts>3</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val>RPM</Val>
+</String>
+<String>
+<Name>manUnit</Name>
+<Val>%</Val>
+</String>
+<String>
+<Name>manName</Name>
+<Val>Power</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_ag = self.root_xml % expected_ag
+
+        ag = hello_state.AgitationController()
+        testroot = Element("TestRoot")
+        actual_ag_ele = ag.mi_toxml(testroot)
+        actual_ag = xml_tostring(actual_ag_ele).decode().replace("\n", "")
+        self.assertXMLEqual(expected_ag, actual_ag)
+
+    def test_temperature(self):
+
+        expected_xml = """
+<Cluster>
+<Name>Temperature</Name>
+<NumElts>3</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val>°C</Val>
+</String>
+<String>
+<Name>manUnit</Name>
+<Val>%</Val>
+</String>
+<String>
+<Name>manName</Name>
+<Val>Heater Duty</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_xml = self.root_xml % expected_xml
+
+        temp = hello_state.TemperatureController()
+        testroot = Element("TestRoot")
+        actual_ele = temp.mi_toxml(testroot)
+        actual_xml = xml_tostring(actual_ele, 'unicode').replace("\n", "")
+        self.assertXMLEqual(expected_xml, actual_xml)
+
+    def test_do(self):
+        expected_xml = """<Cluster>
+<Name>DO</Name>
+<NumElts>5</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val>%</Val>
+</String>
+<String>
+<Name>manUpUnit</Name>
+<Val>mL/min</Val>
+</String>
+<String>
+<Name>manDownUnit</Name>
+<Val>%</Val>
+</String>
+<String>
+<Name>manUpName</Name>
+<Val>O_2</Val>
+</String>
+<String>
+<Name>manDownName</Name>
+<Val>N_2</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_xml = self.root_xml % expected_xml
+
+        temp = hello_state.DOController()
+        testroot = Element("TestRoot")
+        actual_ele = temp.mi_toxml(testroot)
+        actual_xml = xml_tostring(actual_ele).decode()
+
+        self.assertXMLEqual(expected_xml, actual_xml)
+
+    def test_ph(self):
+        expected_xml = """
+<Cluster>
+<Name>pH</Name>
+<NumElts>5</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val/>
+</String>
+<String>
+<Name>manUpUnit</Name>
+<Val>%</Val>
+</String>
+<String>
+<Name>manDownUnit</Name>
+<Val>%</Val>
+</String>
+<String>
+<Name>manUpName</Name>
+<Val>Base</Val>
+</String>
+<String>
+<Name>manDownName</Name>
+<Val>CO_2</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_xml = self.root_xml % expected_xml
+
+        temp = hello_state.pHController()
+        testroot = Element("TestRoot")
+        actual_ele = temp.mi_toxml(testroot)
+        actual_xml = xml_tostring(actual_ele).decode()
+
+        self.assertXMLEqual(expected_xml, actual_xml)
+
+    def test_pressure(self):
+        expected_xml = """<Cluster>
+<Name>Pressure</Name>
+<NumElts>1</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val>psi</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_xml = self.root_xml % expected_xml
+
+        temp = hello_state.PressureController()
+        testroot = Element("TestRoot")
+        actual_ele = temp.mi_toxml(testroot)
+        actual_xml = xml_tostring(actual_ele).decode()
+
+        self.assertXMLEqual(expected_xml, actual_xml)
+
+    def test_level(self):
+        expected_xml = """Cluster>
+<Name>Level</Name>
+<NumElts>1</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val>L</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_xml = self.root_xml % expected_xml
+
+        temp = hello_state.PressureController()
+        testroot = Element("TestRoot")
+        actual_ele = temp.mi_toxml(testroot)
+        actual_xml = xml_tostring(actual_ele).decode()
+
+        self.assertXMLEqual(expected_xml, actual_xml)
+
+    def test_condenser(self):
+        expected_xml = """<Cluster>
+<Name>Condenser</Name>
+<NumElts>1</NumElts>
+<String>
+<Name>pvUnit</Name>
+<Val>°C</Val>
+</String>
+</Cluster>""".replace("\n", "")
+
+        expected_xml = self.root_xml % expected_xml
+
+        temp = hello_state.FilterOvenController()
+        testroot = Element("TestRoot")
+        actual_ele = temp.mi_toxml(testroot)
+        actual_xml = xml_tostring(actual_ele).decode()
+
+        self.assertXMLEqual(expected_xml, actual_xml)
+
 from hello.mock.pid import delay_buffer
 
 
@@ -357,21 +568,20 @@ class TestXMLUtilities(unittest.TestCase):
         strtoxml("Bar", "test2", actual_root)
         strtoxml("Baz", "test3", actual_root)
 
-        expected = XML(
-        """<TestRoot>
-        <String>
-         <Name>test1</Name>
-         <Val>Foo</Val>
-        </String>
-        <String>
-         <Name>test2</Name>
-         <Val>Bar</Val>
-        </String>
-        <String>
-         <Name>test3</Name>
-         <Val>Baz</Val>
-        </String>
-        </TestRoot>""".replace(" ", "").replace("\n", "")
+        expected = XML( """<TestRoot>
+<String>
+<Name>test1</Name>
+<Val>Foo</Val>
+</String>
+<String>
+<Name>test2</Name>
+<Val>Bar</Val>
+</String>
+<String>
+<Name>test3</Name>
+<Val>Baz</Val>
+</String>
+</TestRoot>""".replace("\n", "")
         )
 
         self.assertEqual(expected, actual_root)

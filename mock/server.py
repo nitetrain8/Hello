@@ -42,28 +42,20 @@ def _stack_trace():
     return rv
 
 
+# custom error codes
+E_UNKN_WTF = -1
 E_UNEXPECTED_ARG = 1
+E_BAD_LOGIN = 7115
+E_UNRECOGNIZED_CMD = 7815
+E_BAD_SYNTAX = 7816
+
 
 class HelloServerException(Exception):
-    pass
+    def __init__(self, args):
+        self.args = args,
+        self.result = args
+        self.message = args
 
-# Adding an explicit exception attribute makes
-# it easier to extract a string representation
-# of the error for returning to the client.
-
-
-class BadQueryString(HelloServerException):
-    """ Couldn't parse query string, multiple arguments given,
-    or other syntax & semantic errors.
-    """
-    def __init__(self, string):
-        self.args = string,
-        self.string = string
-
-
-class UnrecognizedCommand(HelloServerException):
-    """ User asked for something weird.
-    """
     def json_reply(self):
         reply = {
             'result': self.result,
@@ -81,10 +73,30 @@ class UnrecognizedCommand(HelloServerException):
         reply = xml_tostring(reply, 'us-ascii')
         return reply
 
+# Adding an explicit exception attribute makes
+# it easier to extract a string representation
+# of the error for returning to the client.
+
+
+class BadQueryString(HelloServerException):
+    """ Couldn't parse query string, multiple arguments given,
+    or other syntax & semantic errors.
+    """
+    def __init__(self, string):
+        self.args = string,
+        self.string = string
+        self.result = string
+        self.message = string
+
+
+class UnrecognizedCommand(HelloServerException):
+    """ User asked for something weird.
+    """
+
     def __init__(self, cmd, rsp_fmt="xml"):
         self.args = cmd,
         self.cmd = cmd
-        self.err_code = 7815
+        self.err_code = E_UNRECOGNIZED_CMD
         self.result = "False"
         self.message = "Unrecognized Command: %s" % self.err_code
         self.rsp_fmt = rsp_fmt
@@ -117,6 +129,8 @@ class ArgumentError(UnrecognizedCommand):
 
 class UnexpectedArgument(UnrecognizedCommand):
     def __init__(self, what, rsp_fmt):
+        if not isinstance(what, str):
+            what = ' '.join(what)
         self.result = "False"
         self.what = what
         self.err_code = E_UNEXPECTED_ARG
@@ -138,7 +152,7 @@ class UnknownInternalError(UnrecognizedCommand):
         if msg:
             self.message = "\n".join((msg, self.message))
         self.args = self.message,
-        self.err_code = -1
+        self.err_code = E_UNKN_WTF
         self.rsp_fmt = 'json'
         self.reply = self.json_reply()
 
@@ -192,7 +206,7 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
 
         call = kws.get('call')
         if call is None:
-            raise ArgumentError("Syntax", 7816, 'json' if 'json' in kws else 'xml', "Syntax Error 7816")
+            raise ArgumentError("Syntax", E_BAD_SYNTAX, 'json' if 'json' in kws else 'xml', "Syntax Error 7816")
 
         return call, kws
 
@@ -281,9 +295,9 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
             loader = params.pop("loader")
             skipvalidate = params.pop("skipvalidate")
             if not real_mode and params:
-                raise ArgumentError(' '.join(params), 1, 'xml')
+                raise UnexpectedArgument(params, 'xml')
         except KeyError as e:
-            raise ArgumentError(e.args[0], 7115, 'xml', 'Username/password incorrect 7115')
+            raise ArgumentError(e.args[0], E_BAD_LOGIN, 'xml', 'Username/password incorrect %s' % E_BAD_LOGIN)
 
         if self.server.state.login(val1, val2, loader, skipvalidate):
             self.send_good_set_reply()
@@ -293,27 +307,31 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
     def logout(self, params, real_mode=False):
 
         if params and not real_mode:
-            raise ArgumentError(' '.join(params), 1, 'xml')
+            raise UnexpectedArgument(params, 'xml')
 
         if self.server.state.logout():
             return
         else:
             raise UnknownInternalError("Failed to logout")
 
+    def _get_json_from_kw(self, params):
+        json = params.pop('json', "")
+        if not json or json.lower() in {"0", "false"}:
+            json = False
+        else:
+            json = True
+        return json
+
     def getversion(self, params, real_mode=False):
 
         if self.allow_json:
-            json = params.pop('json', "")
-            if not json or json.lower() in {"0", "false"}:
-                json = False
-            else:
-                json = True
+            json = self._get_json_from_kw(params)
         else:
             json = False
 
         if not real_mode:
             if params:
-                raise ArgumentError(' '.join(params), 1, 'xml')
+                raise UnexpectedArgument(params, 'xml')
 
         version = self.server.state.getversion(json)
         if version:
@@ -321,7 +339,18 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
         else:
             raise UnknownInternalError("Error Getting Version Info")
 
-    def getmaininfo(self): pass
+    def getmaininfo(self, params, real_mode=False):
+        if self.allow_json:
+            json = self._get_json_from_kw(params)
+        else:
+            json = False
+
+        if not real_mode and params:
+            raise UnexpectedArgument(params, 'xml')
+
+        mi = self.server.state.getmaininfo(json)
+        if mi:
+            self.send_reply(mi, 'json' if json else 'xml')
 
 
 class HelloServer(HTTPServer, metaclass=meta):

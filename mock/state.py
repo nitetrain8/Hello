@@ -157,10 +157,7 @@ class BaseController():
         self.pv = 0
         self._pvgenerator = lambda: (0, 0)
         self.mv_attrs = ("pv",)
-        self.mi_attrs = ("pvunit",)
-
-    def mi_toxml(self):
-        pass
+        self.mi_attrs = ("pvUnit",)
 
     def set_pvgen(self, gen):
         self._pvgenerator = gen
@@ -216,10 +213,34 @@ class BaseController():
 
         return cluster
 
+    def mi_toxml(self, root=None):
+        if root is None:
+            cluster = root = Element('Cluster')
+        else:
+            cluster = SubElement(root, 'Cluster')
+        cluster.text = '\n'
+        name = SubElement(cluster, "Name")
+        name.text = self.name
+        NumElts = SubElement(cluster, "NumElts")
+        NumElts.text = str(len(self.mi_attrs))
+        for attr in self.mi_attrs:
+            val = getattr(self, attr)
+            string_ele = SubElement(cluster, "String")
+            string_ele.text = '\n'
+            name_ele = SubElement(string_ele, "Name")
+            name_ele.text = attr
+            val_ele = SubElement(string_ele, "Val")
+            val_ele.text = val
+
+        return root
+
+    def mi_tojson(self):
+        return {attr: getattr(self, attr) for attr in self.mi_attrs}
+
 
 class StandardController(BaseController):
     def __init__(self, name, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0,
-                 pvunit='', manunit='', manname=''):
+                 pvUnit='', manUnit='', manName=''):
 
         super().__init__(name)
         self.pv = pv
@@ -228,11 +249,12 @@ class StandardController(BaseController):
         self.mode = mode
         self.error = error
         self.interlocked = interlocked
-        self.pvunit = pvunit
-        self.manunit = manunit
-        self.manname = manname
+        self.pvUnit = pvUnit
+        self.manUnit = manUnit
+        self.manName = manName
 
         self.mv_attrs = 'pv', 'sp', 'man', 'mode', 'error', 'interlocked'
+        self.mi_attrs = 'pvUnit', 'manUnit', 'manName'
 
         self.set_pvgen(sin_wave(5, 30, 15))
 
@@ -249,8 +271,8 @@ class StandardController(BaseController):
 
 class TwoWayController(BaseController):
     def __init__(self, name, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, 
-                 interlocked=0, pvunit='', manupunit='', mandownunit='', manupname='',
-                 mandownname=''):
+                 interlocked=0, pvUnit='', manUpUnit='', manDownUnit='', manUpName='',
+                 manDownName=''):
         BaseController.__init__(self, name)
         self.pv = pv
         self.sp = sp
@@ -259,13 +281,14 @@ class TwoWayController(BaseController):
         self.mode = mode
         self.error = error
         self.interlocked = interlocked
-        self.pvpunit = pvunit
-        self.manupunit = manupunit
-        self.mandownunit = mandownunit
-        self.manupname = manupname
-        self.mandownname = mandownname
+        self.pvUnit = pvUnit
+        self.manUpUnit = manUpUnit
+        self.manDownUnit = manDownUnit
+        self.manUpName = manUpName
+        self.manDownName = manDownName
 
         self.mv_attrs = 'pv', 'sp', 'manUp', 'manDown', 'mode', 'error', 'interlocked'
+        self.mi_attrs = 'pvUnit', 'manUpUnit', 'manDownUnit', 'manUpName', 'manDownName'
 
         self.set_pvgen(sin_wave(3, 60, 50))
 
@@ -282,15 +305,16 @@ class TwoWayController(BaseController):
 
 
 class SmallController(BaseController):
-    def __init__(self, name, pv=0, sp=0, mode=0, error=0, pvunit=""):
+    def __init__(self, name, pv=0, sp=0, mode=0, error=0, pvUnit=""):
         BaseController.__init__(self, name)
         self.pv = pv
         self.sp = sp
         self.mode = mode
         self.error = error
-        self.pvunit = pvunit
+        self.pvUnit = pvUnit
 
         self.mv_attrs = 'pv', 'mode', 'error'
+        self.mi_attrs = 'pvUnit',
 
         self.set_pvgen(sin_wave(1, 10, 5))
 
@@ -305,71 +329,71 @@ class SmallController(BaseController):
 class AgitationController(StandardController):
     def __init__(self, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0):
         StandardController.__init__(self, "Agitation", pv, sp, man, mode, error, interlocked)
-        self.pvunit = "RPM"
-        self.manunit = "%"
-        self.manname = "Power"
+        self.pvUnit = "RPM"
+        self.manUnit = "%"
+        self.manName = "Power"
 
 
 class TemperatureController(StandardController):
     def __init__(self, pv=0, sp=20, man=5, mode=2, error=0, interlocked=0):
         StandardController.__init__(self, "Temperature", pv, sp, man, mode, error, interlocked)
-        self.pvunit = "\xb0C"
-        self.manunit = "%"
-        self.manname = "Heater Duty"
+        self.pvUnit = "\xb0C"
+        self.manUnit = "%"
+        self.manName = "Heater Duty"
 
 
 class pHController(TwoWayController):
     def __init__(self, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, interlocked=0):
         TwoWayController.__init__(self, "pH", pv, sp, manup, mandown, mode, error, interlocked)
-        self.pvunit = "pH"
-        self.manupunit = "%"
-        self.mandownunit = "%"
-        self.manupname = "Base"
-        self.mandownname = "CO_2"
+        self.pvUnit = "pH"
+        self.manUpUnit = "%"
+        self.manDownUnit = "%"
+        self.manUpName = "Base"
+        self.manDownName = "CO_2"
 
 
 class DOController(TwoWayController):
     def __init__(self, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, interlocked=0):
         TwoWayController.__init__(self, "DO", pv, sp, manup, mandown, mode, error, interlocked)
-        self.pvunit = "%"
-        self.manupunit = "mL/min"
-        self.mandownunit = "%"
-        self.manupname = "O_2"
-        self.mandownname = "N_2"
+        self.pvUnit = "%"
+        self.manUpUnit = "mL/min"
+        self.manDownUnit = "%"
+        self.manUpName = "O_2"
+        self.manDownName = "N_2"
 
 
 class MainGasController(StandardController):
     def __init__(self, pv=0, sp=0, mode=0, error=0, interlocked=0):
         StandardController.__init__(self, "MainGas", pv, sp, mode, error, interlocked)
-        self.pvunit = ""
-        self.manunit = "L/min"
-        self.manname = "Gas Flow"
+        self.pvUnit = ""
+        self.manUnit = "L/min"
+        self.manName = "Gas Flow"
 
 
 class LevelController(SmallController):
     def __init__(self, pv=0, sp=0, mode=0, error=0):
         SmallController.__init__(self, "Level", pv, sp, mode, error)
-        self.pvunit = "L"
+        self.pvUnit = "L"
 
 
 class FilterOvenController(SmallController):
     def __init__(self, pv=0, sp=0, mode=0, error=0):
         SmallController.__init__(self, "Condensor", pv, sp, mode, error)
-        self.pvunit = "\xb0C"
+        self.pvUnit = "\xb0C"
 
 
 class PressureController(SmallController):
     def __init__(self, pv=0, sp=0, mode=0, error=0):
         SmallController.__init__(self, "Pressure", pv, sp, mode, error)
-        self.pvunit = "psi"
+        self.pvUnit = "psi"
 
 
 class SecondaryHeatController(StandardController):
     def __init__(self, pv=0, sp=0, mode=0, error=0, interlocked=0):
         StandardController.__init__(self, "SecondaryHeat", pv, sp, mode, error, interlocked)
-        self.pvunit = "\xb0C"
-        self.manunit = "%"
-        self.manname = "Power"
+        self.pvUnit = "\xb0C"
+        self.manUnit = "%"
+        self.manName = "Power"
 
 
 class HelloStateError(Exception):
