@@ -21,7 +21,7 @@ class PollError(Exception):
     pass
 
 
-class _Poller(PLogger):
+class BasePoller(PLogger):
 
     def __init__(self, name, app_or_ipv4):
         PLogger.__init__(self, name)
@@ -63,7 +63,7 @@ class _Poller(PLogger):
         return xl, wb, ws, cells
 
 
-class Poller(_Poller):
+class Poller(BasePoller):
     """
     @type _app: HelloApp
     """
@@ -217,7 +217,7 @@ class Poller(_Poller):
             xl.Quit()
 
 
-class StartupPoller(_Poller):
+class StartupPoller(BasePoller):
 
     def __init__(self, app_or_ipv4='192.168.1.6'):
         super().__init__("Startup Test", app_or_ipv4)
@@ -341,7 +341,7 @@ class StartupPoller(_Poller):
         return pvs
 
 
-class LowestTester(_Poller):
+class LowestTester(BasePoller):
     def __init__(self, app_or_ipv4='192.168.1.6'):
         super().__init__("Low RPM Test", app_or_ipv4)
         self._results = []

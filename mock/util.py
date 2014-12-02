@@ -58,16 +58,42 @@ def _simple_xml_dump_inner_ascii(b, elem):
     @type elem: Element
     """
     tag = elem.tag.encode('ascii')
-    b.write(tag.join((b"<", b">\n")))
+    b.write(tag.join((b"<", b">")))
 
     txt = elem.text
     if txt:
-        b.write(txt.encode('ascii') + b"\n")
+        b.write(txt.encode('ascii'))
 
     for e in elem:
         _simple_xml_dump_inner_ascii(b, e)
 
-    b.write(tag.join((b"</", b">\n")))
+    b.write(tag.join((b"</", b">")))
+    tail = elem.tail
+    if tail:
+        b.write(tail.encode('ascii'))
+
+
+def _simple_xml_dump_inner_unicode(b, elem):
+    """
+    @param b: BytesIO
+    @type b: BytesIO
+    @param elem: Element
+    @type elem: Element
+    """
+    tag = elem.tag
+    b.write(tag.join(("<", ">\n")))
+
+    txt = elem.text
+    if txt:
+        b.write(txt)
+
+    for e in elem:
+        _simple_xml_dump_inner_ascii(b, e)
+
+    b.write(tag.join(("</", ">")))
+    tail = elem.tail
+    if tail:
+        b.write(tail)
 
 
 def simple_xml_dump(root):
@@ -79,14 +105,12 @@ def simple_xml_dump(root):
     @return: bytes
     """
     b = BytesIO()
+    b.write(b'<?xml version="1.0" encoding="windows-1252" standalone="no" ?>')
     _simple_xml_dump_inner_ascii(b, root)
     return b.getvalue()
 
 
 from collections import Iterable, OrderedDict
-
-
-# def str_to_xml(str, root):
 
 
 def _iter_toxml(root, name, lst):
@@ -179,7 +203,10 @@ class HelloXMLGenerator():
         self.parse_types[typ] = parsefunc
 
     def dispatch(self, obj, name, root):
-        parse = self.parse_types[type(obj)]
+        try:
+            parse = self.parse_types[type(obj)]
+        except KeyError as e:
+            raise ValueError("Don't know how to parse object of type %s" % e.args[0])
         return parse(obj, name, root)
 
     def str_toxml(self, obj, name, root):
@@ -188,6 +215,9 @@ class HelloXMLGenerator():
         name_ele.text = name
         val = SubElement(string, "Val")
         val.text = obj
+
+        string.tail = name_ele.tail = val.tail = "\n"
+        string.text = "\n"
 
     def iter_toxml(self, obj, name, root):
         obj = tuple(obj)
@@ -200,12 +230,18 @@ class HelloXMLGenerator():
         val = SubElement(int_, "Val")
         val.text = str(obj)
 
+        int_.tail = name_ele.tail = val.tail = "\n"
+        int_.text = "\n"
+
     def list_toxml(self, obj, name, root):
         cluster = SubElement(root, "Cluster")
         name_ele = SubElement(cluster, "Name")
         name_ele.text = name
         numelts = SubElement(cluster, "NumElts")
         numelts.text = str(len(obj))
+
+        cluster.tail = name_ele.tail = numelts.tail = "\n"
+        cluster.text = "\n"
 
         for name, item in obj:
             self.dispatch(item, name, cluster)
@@ -217,6 +253,9 @@ class HelloXMLGenerator():
         nelts = SubElement(cluster, "NumElts")
         nelts.text = str(len(obj))
 
+        cluster.tail = name_ele.tail = nelts.tail = "\n"
+        cluster.text = "\n"
+
         for k, v in obj.items():
             self.dispatch(v, k, cluster)
 
@@ -227,22 +266,50 @@ class HelloXMLGenerator():
         val = SubElement(float_, "Val")
         val.text = str(obj)
 
-    def obj_to_xml(self, obj, name="Value", result="True", encoding='us-ascii'):
+        float_.tail = name_ele.tail = val.tail = "\n"
+        float_.text = "\n"
+
+    def obj_to_xml(self, obj, result="True"):
         """
         Main entrypoint. If object is a str, the tree puts the object
-        as the sole contents of <Message>. Otherwise, name is required,
-        and used for the "name" field as the object is recursively parsed.
+        as the sole contents of <Message>. Otherwise, the object is
+        recursively parsed.
         """
         reply = Element("Reply")
         result_ele = SubElement(reply, "Result")
         result_ele.text = str(result)  # True -> "True", "True" -> "True"
-        message = SubElement(reply, "Message")
+        reply.text = ""
         if isinstance(obj, str):
+            message = SubElement(reply, "Message")
             message.text = obj
-        else:
-            self.dispatch(obj, name, message)
+            message.tail = ""
 
-        return xml_tostring(reply, encoding)
+        else:
+            # message is an object. the toplevel object doesn't get
+            # the same <cluster>...</cluster> wrapper that nested
+            # objects get, so we have to sloppily convert message
+            # to its proper format.
+
+            self.dispatch(obj, "Message", reply)
+            msg_ele = reply[1]
+            msg_ele.tag = "Message"
+            msg_ele.tail = ""
+
+            # msg_ele[0] is the <name>Message</name> element that
+            # doesn't exist in the actual xml
+            del msg_ele[0]
+
+            # nelts = SubElement(message, "NumElts")
+            # nelts.text = str(len(message))
+            # nelts.tail = "\n"
+            #
+            # typ = type(message)
+            # if typ == dict:
+
+
+
+
+        return simple_xml_dump(reply)
 
 
 xml_generator = HelloXMLGenerator()

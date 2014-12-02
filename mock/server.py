@@ -25,20 +25,7 @@ else:
 
 
 def _stack_trace():
-
-    """
-    Modified from http://mahmoudimus.com/blog/2011/02/arbitrary-stack-trace-in-python/
-    """
-
-    # get the currently frames' stack
-    # this returns the frameobject, the filename,
-    # the line number of the current line, the
-    # function name, a list of lines of context from
-    # the source code, and the index of the current
-    # line within that list.
-
     rv = traceback.format_list(traceback.extract_stack())
-
     return rv
 
 
@@ -61,8 +48,7 @@ class HelloServerException(Exception):
             'result': self.result,
             "message": self.message
         }
-        reply = json_dumps(reply)
-        return reply
+        return json_dumps(reply)
 
     def xml_reply(self):
         reply = Element("Reply")
@@ -70,8 +56,7 @@ class HelloServerException(Exception):
         result.text = self.result
         message = SubElement(reply, "Message")
         message.text = self.message
-        reply = xml_tostring(reply, 'us-ascii')
-        return reply
+        return xml_tostring(reply, 'us-ascii')
 
 # Adding an explicit exception attribute makes
 # it easier to extract a string representation
@@ -206,7 +191,8 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
 
         call = kws.get('call')
         if call is None:
-            raise ArgumentError("Syntax", E_BAD_SYNTAX, 'json' if 'json' in kws else 'xml', "Syntax Error 7816")
+            raise ArgumentError("Syntax", E_BAD_SYNTAX, 'json' if 'json' in kws else 'xml', "Syntax Error %d"
+                                % E_BAD_SYNTAX)
 
         return call, kws
 
@@ -300,7 +286,7 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
             raise ArgumentError(e.args[0], E_BAD_LOGIN, 'xml', 'Username/password incorrect %s' % E_BAD_LOGIN)
 
         if self.server.state.login(val1, val2, loader, skipvalidate):
-            self.send_good_set_reply()
+            return self.send_good_set_reply()
         else:
             raise ArgumentError("Unknown", 2, 'xml')
 
@@ -310,7 +296,7 @@ class MyHTTPHandler(SimpleHTTPRequestHandler, metaclass=meta):
             raise UnexpectedArgument(params, 'xml')
 
         if self.server.state.logout():
-            return
+            return self.send_good_set_reply()
         else:
             raise UnknownInternalError("Failed to logout")
 

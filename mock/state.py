@@ -187,11 +187,14 @@ class BaseController():
         else:
             cluster = SubElement(root, 'Cluster')
         cluster.text = '\n'
+        cluster.tail = "\n"
 
         name = SubElement(cluster, "Name")
         name.text = self.name.capitalize()
+        name.tail = "\n"
         vals = SubElement(cluster, 'NumElts')
         vals.text = str(len(self.mv_attrs))
+        vals.tail = "\n"
 
         # python unifies number types into a single
         # type, so we have to use a separate mapping
@@ -200,7 +203,8 @@ class BaseController():
         for attr in self.mv_attrs:
             lv_type = self.name_to_lv_type[attr]
             typ = SubElement(cluster, lv_type)
-            typ.text = "\n"
+            typ.text = ""
+            typ.tail = "\n"
 
             name = SubElement(typ, "Name")
             name.text = attr
@@ -210,6 +214,7 @@ class BaseController():
                 val.text = "%.5f" % getattr(self, attr)
             else:
                 val.text = "%s" % getattr(self, attr)
+            val.tail = "\n"
 
         return cluster
 
@@ -345,7 +350,7 @@ class TemperatureController(StandardController):
 class pHController(TwoWayController):
     def __init__(self, pv=0, sp=20, manup=5, mandown=0, mode=2, error=0, interlocked=0):
         TwoWayController.__init__(self, "pH", pv, sp, manup, mandown, mode, error, interlocked)
-        self.pvUnit = "pH"
+        self.pvUnit = ""
         self.manUpUnit = "%"
         self.manDownUnit = "%"
         self.manUpName = "Base"
@@ -378,7 +383,7 @@ class LevelController(SmallController):
 
 class FilterOvenController(SmallController):
     def __init__(self, pv=0, sp=0, mode=0, error=0):
-        SmallController.__init__(self, "Condensor", pv, sp, mode, error)
+        SmallController.__init__(self, "Condenser", pv, sp, mode, error)
         self.pvUnit = "\xb0C"
 
 
@@ -434,7 +439,6 @@ class HelloState():
         self.filteroven = f = FilterOvenController(40, 50)
         self.pressure = p = PressureController(0, 0, 0)
 
-        # the short local names are for brevity.
         self.controllers = a, t, ph, d, m, s, l, f, p
 
         self._login_info = {
@@ -465,16 +469,21 @@ class HelloState():
         # SubElement and c.mv_toxml modify state in-place.
         root = Element("Reply")
         root.text = ""
+        root.tail = "\n"
         result = SubElement(root, 'Result')
         result.text = "True"
         message = SubElement(root, "Message")
         message.text = ""
+        message.tail = "\n"
         cluster = SubElement(message, "Cluster")
         cluster.text = ""
+        cluster.tail = "\n"
         name = SubElement(cluster, "Name")
         name.text = "Message"
+        name.tail = "\n"
         nelements = SubElement(cluster, "NumElts")
         nelements.text = str(len(self.controllers))
+        nelements.tail = "\n"
         for c in self.controllers:
             c.mv_toxml(cluster)
         return root
@@ -483,7 +492,7 @@ class HelloState():
         if json:
             return json_dumps(self.get_dict_main_values(), indent="\t")
         else:
-            return xml_tostring(self.get_xml_main_values(), None, 'ascii')
+            return xml_tostring(self.get_xml_main_values(), 'us-ascii')
 
     def login(self, val1, val2, loader, skipvalidate):
         user = val1

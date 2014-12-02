@@ -45,74 +45,8 @@ from json import loads as json_loads, dumps as json_dumps
 
 
 class TestState(unittest.TestCase):
-    def test_SimpleController(self):
-        """
-        @return: None
-        @rtype: None
-        """
-        c = StandardController("TestSimpleController")
-        c.pv = 1
-        c.sp = 2
-        c.man = 3
-        c.mode = 4
-        c.error = 5
-        c.interlocked = 6
 
-        expected = {
-            'pv': 1,
-            'sp': 2,
-            'man': 3,
-            'mode': 4,
-            'error': 5,
-            'interlocked': 6
-        }
-
-        actual = c.mv_todict()
-
-        self.assertEqual(expected, actual)
-
-    def test_TwoWayController(self):
-        c = TwoWayController("TestTwoWayController")
-        c.pv = 1
-        c.sp = 2
-        c.manUp = 3
-        c.manDown = 4
-        c.mode = 5
-        c.error = 6
-        c.interlocked = 7
-
-        expected = {
-            'pv': 1,
-            'sp': 2,
-            'manUp': 3,
-            'manDown': 4,
-            'mode': 5,
-            'error': 6,
-            'interlocked': 7
-        }
-
-        actual = c.mv_todict()
-
-        self.assertEqual(expected, actual)
-
-    def test_SmallController(self):
-        c = SmallController("TestSmallController")
-        c.pv = 1
-        c.sp = 2
-        c.mode = 3
-        c.error = 4
-
-        expected = {
-            'pv': 1,
-            'mode': 3,
-            'error': 4
-        }
-
-        actual = c.mv_todict()
-
-        self.assertEqual(expected, actual)
-
-    def test_HelloState(self):
+    def setUp(self):
         s = HelloState()
         s.agitation.error = 1
         s.agitation.interlocked = 2
@@ -165,6 +99,11 @@ class TestState(unittest.TestCase):
         s.temperature.pv = 49
         s.temperature.sp = 50
 
+        self.hello_state = s
+
+    def test_get_dict_main_values(self):
+        s = self.hello_state
+
         expected = {
             "result": "True",
             "message": {
@@ -187,7 +126,7 @@ class TestState(unittest.TestCase):
                     'sp': 13,
                 },
 
-                'Condensor': {
+                'Condenser': {
                     'error': 14,
                     'mode': 15,
                     'pv': 16,
@@ -274,7 +213,7 @@ class TestState(unittest.TestCase):
                     self.assertEqual(eval2, aval2, " ".join((ekey, ekey2)))
             raise
 
-        # these won't match, because dict order is arbitrary
+        # these won't necessarily match, because dict order is arbitrary
         expected_json = json_dumps(expected)
         actual_json = json_dumps(actual)
 
@@ -283,6 +222,131 @@ class TestState(unittest.TestCase):
         actual_from_json = json_loads(actual_json)
 
         self.assertEqual(expected_from_json, actual_from_json)
+
+
+class ControllerTestBase():
+    def setUp(self):
+        self.controller = None
+
+    def assertAllIn(self, keys, container, msg=None):
+        diffs = []
+        for key in keys:
+            if key not in container:
+                diffs.append(str(key))
+
+        if diffs:
+            msg2 = "Keys not in container: " + " ".join(diffs)
+            if msg:
+                msg2 += msg
+            raise self.failureException(msg2)
+
+    def assertHasAttrs(self, obj, attrs, msg=None):
+        for a in attrs:
+            if not hasattr(obj, a):
+                raise self.failureException(str(a) + msg)
+
+    def test_controller_mv_attrs(self):
+
+        mv_attrs = self.controller.mv_attrs
+        set_mv_attrs = set(mv_attrs)
+
+        self.assertEqual(len(mv_attrs), len(set_mv_attrs))
+        self.assertAllIn(mv_attrs, set_mv_attrs)
+        self.assertHasAttrs(self.controller, mv_attrs)
+
+    def test_controller_mi_attrs(self):
+        mi_attrs = self.controller.mi_attrs
+        set_mv_attrs = set(mi_attrs)
+
+        self.assertEqual(len(mi_attrs), len(set_mv_attrs))
+        self.assertAllIn(mi_attrs, set_mv_attrs)
+        self.assertHasAttrs(self.controller, mi_attrs)
+
+
+class TestSimpleController(ControllerTestBase, unittest.TestCase):
+
+    def setUp(self):
+        c = StandardController("TestSimpleController")
+        c.pv = 1
+        c.sp = 2
+        c.man = 3
+        c.mode = 4
+        c.error = 5
+        c.interlocked = 6
+
+        self.controller = c
+
+    def test_mv_todict(self):
+        """
+        @return: None
+        @rtype: None
+        """
+        c = self.controller
+
+        expected = {
+            'pv': 1,
+            'sp': 2,
+            'man': 3,
+            'mode': 4,
+            'error': 5,
+            'interlocked': 6
+        }
+
+        actual = c.mv_todict()
+
+        self.assertEqual(expected, actual)
+
+
+class TestTwoWayController(ControllerTestBase, unittest.TestCase):
+    def setUp(self):
+        c = TwoWayController("TestTwoWayController")
+        c.pv = 1
+        c.sp = 2
+        c.manUp = 3
+        c.manDown = 4
+        c.mode = 5
+        c.error = 6
+        c.interlocked = 7
+        self.controller = c
+
+    def test_mvtodict(self):
+        c = self.controller
+        expected = {
+            'pv': 1,
+            'sp': 2,
+            'manUp': 3,
+            'manDown': 4,
+            'mode': 5,
+            'error': 6,
+            'interlocked': 7
+        }
+
+        actual = c.mv_todict()
+
+        self.assertEqual(expected, actual)
+
+
+class TestSmallController(ControllerTestBase, unittest.TestCase):
+    def setUp(self):
+        c = SmallController("TestSmallController")
+        c.pv = 1
+        c.sp = 2
+        c.mode = 3
+        c.error = 4
+        self.controller = c
+
+    def test_mv_todict(self):
+
+        c = self.controller
+        expected = {
+            'pv': 1,
+            'mode': 3,
+            'error': 4
+        }
+
+        actual = c.mv_todict()
+
+        self.assertEqual(expected, actual)
 
 
 class TestStateMainInfo(unittest.TestCase):
@@ -397,7 +461,7 @@ class TestStateMainInfo(unittest.TestCase):
         temp = hello_state.DOController()
         testroot = Element("TestRoot")
         actual_ele = temp.mi_toxml(testroot)
-        actual_xml = xml_tostring(actual_ele).decode()
+        actual_xml = xml_tostring(actual_ele, 'unicode').replace("\n", "")
 
         self.assertXMLEqual(expected_xml, actual_xml)
 
@@ -408,7 +472,7 @@ class TestStateMainInfo(unittest.TestCase):
 <NumElts>5</NumElts>
 <String>
 <Name>pvUnit</Name>
-<Val/>
+<Val />
 </String>
 <String>
 <Name>manUpUnit</Name>
@@ -433,8 +497,7 @@ class TestStateMainInfo(unittest.TestCase):
         temp = hello_state.pHController()
         testroot = Element("TestRoot")
         actual_ele = temp.mi_toxml(testroot)
-        actual_xml = xml_tostring(actual_ele).decode()
-
+        actual_xml = xml_tostring(actual_ele, 'unicode').replace("\n", "")
         self.assertXMLEqual(expected_xml, actual_xml)
 
     def test_pressure(self):
@@ -452,12 +515,12 @@ class TestStateMainInfo(unittest.TestCase):
         temp = hello_state.PressureController()
         testroot = Element("TestRoot")
         actual_ele = temp.mi_toxml(testroot)
-        actual_xml = xml_tostring(actual_ele).decode()
+        actual_xml = xml_tostring(actual_ele, 'unicode').replace("\n", "")
 
         self.assertXMLEqual(expected_xml, actual_xml)
 
     def test_level(self):
-        expected_xml = """Cluster>
+        expected_xml = """<Cluster>
 <Name>Level</Name>
 <NumElts>1</NumElts>
 <String>
@@ -468,10 +531,10 @@ class TestStateMainInfo(unittest.TestCase):
 
         expected_xml = self.root_xml % expected_xml
 
-        temp = hello_state.PressureController()
+        temp = hello_state.LevelController()
         testroot = Element("TestRoot")
         actual_ele = temp.mi_toxml(testroot)
-        actual_xml = xml_tostring(actual_ele).decode()
+        actual_xml = xml_tostring(actual_ele, 'unicode').replace("\n", "")
 
         self.assertXMLEqual(expected_xml, actual_xml)
 
@@ -490,7 +553,7 @@ class TestStateMainInfo(unittest.TestCase):
         temp = hello_state.FilterOvenController()
         testroot = Element("TestRoot")
         actual_ele = temp.mi_toxml(testroot)
-        actual_xml = xml_tostring(actual_ele).decode()
+        actual_xml = xml_tostring(actual_ele, 'unicode').replace("\n", '')
 
         self.assertXMLEqual(expected_xml, actual_xml)
 
@@ -545,30 +608,34 @@ class TestXMLUtilities(unittest.TestCase):
         self.assertIsInstance(second, Element, msg + "First argument is not an Element")
 
         # compare basic attributes
-        self.assertEqual(first.tag, second.tag, msg + "Element tags do not match")
-        self.assertEqual(first.text, second.text, msg + "Element text does not match")
-        self.assertEqual(first.attrib, second.attrib, msg + "Element attributes do not match")
-        self.assertEqual(first.tail, second.tail, msg + "Element tails do not match")
+
+        name1 = str(first)
+        name2 = str(second)
+        self.assertEqual(first.tag, second.tag, msg + "Element tags do not match (%s != %s)" % (name1, name2))
+        self.assertEqual(first.text, second.text, msg + "Element text does not match(%s != %s)" % (name1, name2))
+        self.assertEqual(first.attrib, second.attrib, msg + "Element attributes do not match(%s != %s)"
+                         % (name1, name2))
+        self.assertEqual(first.tail, second.tail, msg + "Element tails do not match(%s != %s)" % (name1, name2))
 
         for f, s in zip_longest(first, second):
-            self.assertEqual(f, s, msg)
+            self.assertElementEqual(f, s, msg)
 
     def setUp(self):
         self.addTypeEqualityFunc(Element, self.assertElementEqual)
         self.generator = HelloXMLGenerator()
 
-    def test_xmlgenerator_strotoxml(self):
-        """
-        Basic test that all the individual parsing functions work.
-        """
-        strtoxml = self.generator.str_toxml
+    def test_obj_to_xml(self):
+        obj_to_xml = self.generator.obj_to_xml
 
-        actual_root = Element("TestRoot")
-        strtoxml("Foo", "test1", actual_root)
-        strtoxml("Bar", "test2", actual_root)
-        strtoxml("Baz", "test3", actual_root)
+        obj = [
+            ('test1', 'Foo'),
+            ('test2', 'Bar'),
+            ('test3', 'Baz')
+        ]
+        actual_txt = obj_to_xml(obj)
 
-        expected = XML( """<TestRoot>
+        expected = b"""<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message>
+<NumElts>3</NumElts>
 <String>
 <Name>test1</Name>
 <Val>Foo</Val>
@@ -581,7 +648,49 @@ class TestXMLUtilities(unittest.TestCase):
 <Name>test3</Name>
 <Val>Baz</Val>
 </String>
-</TestRoot>""".replace("\n", "")
+</Message></Reply>"""
+
+        exp_no_newline = expected.replace(b"\n", b"")
+        actual_no_newline = actual_txt.replace(b"\n", b"")
+
+        # print(exp_no_newline)
+        # print(actual_no_newline)
+
+        self.assertEqual(exp_no_newline, actual_no_newline)
+        try:
+            self.assertEqual(expected, actual_txt)
+        except:
+            for l1, l2 in zip(expected.splitlines(), actual_txt.splitlines()):
+                self.assertEqual(l1, l2)
+            raise
+
+
+    def test_xmlgenerator_strotoxml(self):
+        """
+        Basic test that all the individual parsing functions work.
+        """
+        strtoxml = self.generator.str_toxml
+
+        actual_root = Element("TestRoot")
+        actual_root.text = "\n"
+        strtoxml("Foo", "test1", actual_root)
+        strtoxml("Bar", "test2", actual_root)
+        strtoxml("Baz", "test3", actual_root)
+
+        expected = XML("""<TestRoot>
+<String>
+<Name>test1</Name>
+<Val>Foo</Val>
+</String>
+<String>
+<Name>test2</Name>
+<Val>Bar</Val>
+</String>
+<String>
+<Name>test3</Name>
+<Val>Baz</Val>
+</String>
+</TestRoot>"""
         )
 
         self.assertEqual(expected, actual_root)
@@ -593,26 +702,27 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc = self.generator.int_toxml
 
         actual_root = Element("TestRoot")
+        actual_root.text = "\n"
         testfunc(1, "test1", actual_root)
         testfunc(2, "test2", actual_root)
         testfunc(3, "test3", actual_root)
 
         expected = XML(
-            """<TestRoot>
-            <U32>
-             <Name>test1</Name>
-             <Val>1</Val>
-            </U32>
-            <U32>
-             <Name>test2</Name>
-             <Val>2</Val>
-            </U32>
-            <U32>
-             <Name>test3</Name>
-             <Val>3</Val>
-            </U32>
-            </TestRoot>""".replace(" ", "").replace("\n", "")
-        )
+"""<TestRoot>
+<U32>
+<Name>test1</Name>
+<Val>1</Val>
+</U32>
+<U32>
+<Name>test2</Name>
+<Val>2</Val>
+</U32>
+<U32>
+<Name>test3</Name>
+<Val>3</Val>
+</U32>
+</TestRoot>"""
+)
 
         self.assertEqual(expected, actual_root)
 
@@ -623,26 +733,27 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc = self.generator.float_toxml
 
         actual_root = Element("TestRoot")
+        actual_root.text = "\n"
         testfunc(1.0, "test1", actual_root)
         testfunc(2.0, "test2", actual_root)
         testfunc(3.0, "test3", actual_root)
 
         expected = XML(
-            """<TestRoot>
-            <SGL>
-             <Name>test1</Name>
-             <Val>1.0</Val>
-            </SGL>
-            <SGL>
-             <Name>test2</Name>
-             <Val>2.0</Val>
-            </SGL>
-            <SGL>
-             <Name>test3</Name>
-             <Val>3.0</Val>
-            </SGL>
-            </TestRoot>""".replace(" ", "").replace("\n", "")
-        )
+"""<TestRoot>
+<SGL>
+<Name>test1</Name>
+<Val>1.0</Val>
+</SGL>
+<SGL>
+<Name>test2</Name>
+<Val>2.0</Val>
+</SGL>
+<SGL>
+<Name>test3</Name>
+<Val>3.0</Val>
+</SGL>
+</TestRoot>"""
+)
 
         self.assertEqual(expected, actual_root)
         
@@ -650,6 +761,7 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc = self.generator.list_toxml
         
         actual_root = Element("TestRoot")
+        actual_root.text = "\n"
         l1 = [
             ('list1.1', 1),
             ('list1.2', 2),
@@ -672,30 +784,29 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc(l2, "test2", actual_root)
         testfunc(l3, "test3", actual_root)
 
-        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+        sub_tmplt = "<%s>\n<Name>%s</Name>\n<Val>%s</Val>\n</%s>"
 
-        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1)
-        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2)
-        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3)
+        sub1 = '\n'.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1)
+        sub2 = '\n'.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2)
+        sub3 = '\n'.join(sub_tmplt % ("String", k, v, "String") for k, v in l3)
 
         xml = """<TestRoot>
-            <Cluster>
-             <Name>test1</Name>
-             <NumElts>3</NumElts>
-            %s
-            </Cluster>
-            <Cluster>
-             <Name>test2</Name>
-             <NumElts>4</NumElts>
-             %s
-            </Cluster>
-            <Cluster>
-             <Name>test3</Name>
-             <NumElts>5</NumElts>
-             %s
-            </Cluster>
-            </TestRoot>""" % (sub1, sub2, sub3)
-        xml = xml.replace(" ", "").replace("\n", "")
+<Cluster>
+<Name>test1</Name>
+<NumElts>3</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test2</Name>
+<NumElts>4</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test3</Name>
+<NumElts>5</NumElts>
+%s
+</Cluster>
+</TestRoot>""" % (sub1, sub2, sub3)
         expected = XML(xml)
 
         self.assertEqual(expected, actual_root)
@@ -705,6 +816,7 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc = self.generator.list_toxml
 
         actual_root = Element("TestRoot")
+        actual_root.text = "\n"
         l1 = (
             ('list1.1', 1),
             ('list1.2', 2),
@@ -727,30 +839,29 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc(l2, "test2", actual_root)
         testfunc(l3, "test3", actual_root)
 
-        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+        sub_tmplt = "<%s>\n<Name>%s</Name>\n<Val>%s</Val>\n</%s>"
 
-        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1)
-        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2)
-        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3)
+        sub1 = '\n'.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1)
+        sub2 = '\n'.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2)
+        sub3 = '\n'.join(sub_tmplt % ("String", k, v, "String") for k, v in l3)
 
         xml = """<TestRoot>
-            <Cluster>
-             <Name>test1</Name>
-             <NumElts>3</NumElts>
-            %s
-            </Cluster>
-            <Cluster>
-             <Name>test2</Name>
-             <NumElts>4</NumElts>
-             %s
-            </Cluster>
-            <Cluster>
-             <Name>test3</Name>
-             <NumElts>5</NumElts>
-             %s
-            </Cluster>
-            </TestRoot>""" % (sub1, sub2, sub3)
-        xml = xml.replace(" ", "").replace("\n", "")
+<Cluster>
+<Name>test1</Name>
+<NumElts>3</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test2</Name>
+<NumElts>4</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test3</Name>
+<NumElts>5</NumElts>
+%s
+</Cluster>
+</TestRoot>""" % (sub1, sub2, sub3)
         expected = XML(xml)
 
         self.assertEqual(expected, actual_root)
@@ -781,30 +892,29 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc(l2, "test2", actual_root)
         testfunc(l3, "test3", actual_root)
 
-        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+        sub_tmplt = "<%s>\n<Name>%s</Name>\n<Val>%s</Val>\n</%s>"
 
-        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1.items())
-        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2.items())
-        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3.items())
+        sub1 = '\n'.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1.items())
+        sub2 = '\n'.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2.items())
+        sub3 = '\n'.join(sub_tmplt % ("String", k, v, "String") for k, v in l3.items())
 
         xml = """<TestRoot>
-            <Cluster>
-             <Name>test1</Name>
-             <NumElts>3</NumElts>
-            %s
-            </Cluster>
-            <Cluster>
-             <Name>test2</Name>
-             <NumElts>4</NumElts>
-             %s
-            </Cluster>
-            <Cluster>
-             <Name>test3</Name>
-             <NumElts>5</NumElts>
-             %s
-            </Cluster>
-            </TestRoot>""" % (sub1, sub2, sub3)
-        xml = xml.replace(" ", "").replace("\n", "")
+<Cluster>
+<Name>test1</Name>
+<NumElts>3</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test2</Name>
+<NumElts>4</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test3</Name>
+<NumElts>5</NumElts>
+%s
+</Cluster>
+</TestRoot>""" % (sub1, sub2, sub3)
         expected = XML(xml)
 
         # this is ugly, but the easiest way of checking whether
@@ -827,6 +937,7 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc = self.generator.dict_toxml
 
         actual_root = Element("TestRoot")
+        actual_root.text = "\n"
         l1 = OrderedDict([
             ('list1.1', 1),
             ('list1.2', 2),
@@ -849,30 +960,30 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc(l2, "test2", actual_root)
         testfunc(l3, "test3", actual_root)
 
-        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+        sub_tmplt = "<%s>\n<Name>%s</Name>\n<Val>%s</Val>\n</%s>"
 
-        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1.items())
-        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2.items())
-        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in l3.items())
+        sub1 = '\n'.join(sub_tmplt % ("U32", k, v, "U32") for k, v in l1.items())
+        sub2 = '\n'.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in l2.items())
+        sub3 = '\n'.join(sub_tmplt % ("String", k, v, "String") for k, v in l3.items())
 
         xml = """<TestRoot>
-            <Cluster>
-             <Name>test1</Name>
-             <NumElts>3</NumElts>
-            %s
-            </Cluster>
-            <Cluster>
-             <Name>test2</Name>
-             <NumElts>4</NumElts>
-             %s
-            </Cluster>
-            <Cluster>
-             <Name>test3</Name>
-             <NumElts>5</NumElts>
-             %s
-            </Cluster>
-            </TestRoot>""" % (sub1, sub2, sub3)
-        xml = xml.replace(" ", "").replace("\n", "")
+<Cluster>
+<Name>test1</Name>
+<NumElts>3</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test2</Name>
+<NumElts>4</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test3</Name>
+<NumElts>5</NumElts>
+%s
+</Cluster>
+</TestRoot>""" % (sub1, sub2, sub3)
+
         expected = XML(xml)
 
         # because ordered dict should be ordered,
@@ -884,6 +995,7 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc = self.generator.list_toxml
 
         actual_root = Element("TestRoot")
+        actual_root.text = "\n"
         l1 = (
             ('list1.1', 1),
             ('list1.2', 2),
@@ -915,30 +1027,29 @@ class TestXMLUtilities(unittest.TestCase):
         testfunc(l2, "test2", actual_root)
         testfunc(l3, "test3", actual_root)
 
-        sub_tmplt = "<%s><Name>%s</Name><Val>%s</Val></%s>"
+        sub_tmplt = "<%s>\n<Name>%s</Name>\n<Val>%s</Val>\n</%s>"
 
-        sub1 = ''.join(sub_tmplt % ("U32", k, v, "U32") for k, v in i1)
-        sub2 = ''.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in i2)
-        sub3 = ''.join(sub_tmplt % ("String", k, v, "String") for k, v in i3)
+        sub1 = '\n'.join(sub_tmplt % ("U32", k, v, "U32") for k, v in i1)
+        sub2 = '\n'.join(sub_tmplt % ("SGL", k, v, "SGL") for k, v in i2)
+        sub3 = '\n'.join(sub_tmplt % ("String", k, v, "String") for k, v in i3)
 
         xml = """<TestRoot>
-            <Cluster>
-             <Name>test1</Name>
-             <NumElts>3</NumElts>
-            %s
-            </Cluster>
-            <Cluster>
-             <Name>test2</Name>
-             <NumElts>4</NumElts>
-             %s
-            </Cluster>
-            <Cluster>
-             <Name>test3</Name>
-             <NumElts>5</NumElts>
-             %s
-            </Cluster>
-            </TestRoot>""" % (sub1, sub2, sub3)
-        xml = xml.replace(" ", "").replace("\n", "")
+<Cluster>
+<Name>test1</Name>
+<NumElts>3</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test2</Name>
+<NumElts>4</NumElts>
+%s
+</Cluster>
+<Cluster>
+<Name>test3</Name>
+<NumElts>5</NumElts>
+%s
+</Cluster>
+</TestRoot>""" % (sub1, sub2, sub3)
         expected = XML(xml)
 
         self.assertEqual(expected, actual_root)
