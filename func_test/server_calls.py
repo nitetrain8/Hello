@@ -373,7 +373,6 @@ class TestServerCalls(unittest.TestCase):
         self.calls_seen.add("getRecipes")
         self._validate_xml_get('getRecipes', txt)
 
-
         xml = HelloXML(txt)
         recipes = xml.data.split(',')
         if len(recipes) == 0:

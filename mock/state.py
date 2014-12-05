@@ -6,7 +6,8 @@ Created in: PyCharm Community Edition
 
 
 """
-from hello.mock.util import nextroutine, xml_tostring, simple_xml_dump, obj_to_xml
+from collections import OrderedDict
+from hello.mock.util import nextroutine, simple_xml_dump, obj_to_xml, obj_to_tree
 
 __author__ = 'Nathan Starkweather'
 
@@ -179,7 +180,7 @@ class BaseController():
         return {'pv': self.pv}
 
     def mv_todict2(self):
-        return {attr: getattr(self, attr) for attr in self.mv_attrs}
+        return OrderedDict((attr, getattr(self, attr)) for attr in self.mv_attrs)
 
     def mv_toxml(self, root=None):
         if root is None:
@@ -218,6 +219,9 @@ class BaseController():
 
         return cluster
 
+    def mv_toxml2(self):
+        return [(attr, getattr(self, attr)) for attr in self.mv_attrs]
+
     def mi_toxml(self, root=None):
         if root is None:
             cluster = root = Element('Cluster')
@@ -240,7 +244,7 @@ class BaseController():
         return root
 
     def mi_tojson(self):
-        return {attr: getattr(self, attr) for attr in self.mi_attrs}
+        return OrderedDict((attr, getattr(self, attr)) for attr in self.mi_attrs)
 
 
 class StandardController(BaseController):
@@ -337,6 +341,7 @@ class AgitationController(StandardController):
         self.pvUnit = "RPM"
         self.manUnit = "%"
         self.manName = "Power"
+        self.mv_attrs = tuple(a for a in self.mv_attrs if a != 'interlocked')
 
 
 class TemperatureController(StandardController):
@@ -355,6 +360,7 @@ class pHController(TwoWayController):
         self.manDownUnit = "%"
         self.manUpName = "Base"
         self.manDownName = "CO_2"
+        self.mv_attrs = tuple(a for a in self.mv_attrs if a != 'interlocked')
 
 
 class DOController(TwoWayController):
@@ -365,6 +371,7 @@ class DOController(TwoWayController):
         self.manDownUnit = "%"
         self.manUpName = "O_2"
         self.manDownName = "N_2"
+        self.mv_attrs = tuple(a for a in self.mv_attrs if a != 'interlocked')
 
 
 class MainGasController(StandardController):
@@ -373,6 +380,7 @@ class MainGasController(StandardController):
         self.pvUnit = ""
         self.manUnit = "L/min"
         self.manName = "Gas Flow"
+        self.mv_attrs = tuple(a for a in self.mv_attrs if a != 'sp')
 
 
 class LevelController(SmallController):
@@ -418,13 +426,13 @@ class LoginError(AuthError):
 from time import time
 
 
-version_info = {
-    "RIO": "V12.1",
-    "Server": "V3.1",
-    "Model": "PBS 3",
-    "Database": "V2.2",
-    "Serial Number": "01459C77"
-}
+version_info = OrderedDict(
+    ("RIO", "V12.1"),
+    ("Server", "V3.1"),
+    ("Model", "PBS 3"),
+    ("Database", "V2.2"),
+    ("Serial Number", "01459C77")
+)
 
 
 class HelloState():
@@ -434,12 +442,12 @@ class HelloState():
         self.ph = ph = pHController(7, 7.1, 5, 5, 0)
         self.do = d = DOController(50, 70, 15, 150, 0)
         self.maingas = m = MainGasController(0, 0, 0.5, 1)
-        self.secondaryheat = s = SecondaryHeatController(30, 37, 0, 0)
+        self.secondaryheat = sh = SecondaryHeatController(30, 37, 0, 0)
         self.level = l = LevelController(3)
         self.filteroven = f = FilterOvenController(40, 50)
         self.pressure = p = PressureController(0, 0, 0)
 
-        self.controllers = a, t, ph, d, m, s, l, f, p
+        self.controllers = a, t, sh, d, ph, p, l, f, m
 
         self._login_info = {
             'user1': '12345',
@@ -449,16 +457,17 @@ class HelloState():
         self._last_login = 0
 
         self._version_info = version_info.copy()
+        self.true_reply_xml_encoding = "windows-1252"
 
     def step_main_values(self):
         for c in self.controllers:
             c.step()
 
     def get_dict_main_values(self):
-        return {
-            "result": "True",
-            "message": {c.name: c.mv_todict2() for c in self.controllers}
-        }
+        return OrderedDict((
+            ("result", "True"),
+            ("message", OrderedDict((c.name.lower(), c.mv_todict2()) for c in self.controllers))
+        ))
 
     def get_update(self, json=True):
         self.step_main_values()
@@ -467,32 +476,43 @@ class HelloState():
     def get_xml_main_values(self):
         # Yes, XML really is this goddamn stupid
         # SubElement and c.mv_toxml modify state in-place.
-        root = Element("Reply")
-        root.text = ""
-        root.tail = "\n"
-        result = SubElement(root, 'Result')
-        result.text = "True"
-        message = SubElement(root, "Message")
-        message.text = ""
-        message.tail = "\n"
-        cluster = SubElement(message, "Cluster")
-        cluster.text = ""
-        cluster.tail = "\n"
-        name = SubElement(cluster, "Name")
-        name.text = "Message"
-        name.tail = "\n"
-        nelements = SubElement(cluster, "NumElts")
-        nelements.text = str(len(self.controllers))
-        nelements.tail = "\n"
-        for c in self.controllers:
-            c.mv_toxml(cluster)
-        return root
+        # root = Element("Reply")
+        # root.text = ""
+        # root.tail = "\n"
+        # result = SubElement(root, 'Result')
+        # result.text = "True"
+        # message = SubElement(root, "Message")
+        # message.text = ""
+        # message.tail = "\n"
+        # cluster = SubElement(message, "Cluster")
+        # cluster.text = ""
+        # cluster.tail = "\n"
+        # name = SubElement(cluster, "Name")
+        # name.text = "Message"
+        # name.tail = "\n"
+        # nelements = SubElement(cluster, "NumElts")
+        # nelements.text = str(len(self.controllers))
+        # nelements.tail = "\n"
+        # for c in self.controllers:
+        #     c.mv_toxml(cluster)
+        #
+        message = [(c.name, c.mv_toxml2()) for c in self.controllers]
+
+        reply = (
+            ("Result", "True"),
+            ("Message", message)
+        )
+        rv = (
+            ("Reply", reply),
+        )
+
+        return obj_to_tree(rv)
 
     def getMainValues(self, json=True):
         if json:
             return json_dumps(self.get_dict_main_values(), indent="\t")
         else:
-            return xml_tostring(self.get_xml_main_values(), 'us-ascii')
+            return simple_xml_dump(self.get_xml_main_values(), 'windows-1252')
 
     def login(self, val1, val2, loader, skipvalidate):
         user = val1
@@ -508,20 +528,17 @@ class HelloState():
         return True
 
     def getversion(self, json=False):
-        reply = {
-            "Result": "True",
-            "Message": {
-                "Versions": self._version_info
-            }
-        }
+        reply = OrderedDict(
+            ("Result", "True"),
+            ("Message", {"Versions": self._version_info})
+        )
 
         if json:
             rv = json_dumps(reply)
         else:
-            rv = obj_to_xml(reply, "Versions")
+            rv = obj_to_xml(reply, "True", self.true_reply_xml_encoding)
 
         return rv
-
 
 
 def test1():

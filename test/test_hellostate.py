@@ -224,6 +224,7 @@ class TestState(unittest.TestCase):
         self.assertEqual(expected_from_json, actual_from_json)
 
 
+# noinspection PyAttributeOutsideInit,PyUnresolvedReferences
 class ControllerTestBase():
     def setUp(self):
         self.controller = None
@@ -624,7 +625,7 @@ class TestXMLUtilities(unittest.TestCase):
         self.addTypeEqualityFunc(Element, self.assertElementEqual)
         self.generator = HelloXMLGenerator()
 
-    def test_obj_to_xml(self):
+    def test_obj_to_xml_basic(self):
         obj_to_xml = self.generator.obj_to_xml
 
         obj = [
@@ -659,11 +660,37 @@ class TestXMLUtilities(unittest.TestCase):
         self.assertEqual(exp_no_newline, actual_no_newline)
         try:
             self.assertEqual(expected, actual_txt)
-        except:
+        except self.failureException:
             for l1, l2 in zip(expected.splitlines(), actual_txt.splitlines()):
                 self.assertEqual(l1, l2)
             raise
 
+    def test_obj_to_xml_noniterable(self):
+        obj_to_xml = self.generator.obj_to_xml
+
+        obj = 5
+        actual_txt = obj_to_xml(obj)
+
+        expected = b"<?xml version=\"1.0\" encoding=\"windows-1252\" standalone=\"no\" ?>" \
+                   b"<Reply><Result>True</Result>" \
+                   b"<Message>5</Message></Reply>"
+
+        exp_no_newline = expected.replace(b"\n", b"")
+        actual_no_newline = actual_txt.replace(b"\n", b"")
+
+        # print(exp_no_newline)
+        # print(actual_no_newline)
+
+        self.assertEqual(exp_no_newline, actual_no_newline)
+        try:
+            self.assertEqual(expected, actual_txt)
+        except self.failureException:
+            for l1, l2 in zip(expected.splitlines(), actual_txt.splitlines()):
+                if l1 != l2:
+                    print("== Mismatching lines! ==")
+                    print(l1)
+                    print(l2)
+            raise
 
     def test_xmlgenerator_strotoxml(self):
         """

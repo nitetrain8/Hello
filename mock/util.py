@@ -47,7 +47,7 @@ def xml_dump(obj, root=None, encoding='us-ascii'):
     return xml_tostring(obj, encoding)
 
 
-from io import BytesIO
+from io import BytesIO, StringIO
 
 
 def _simple_xml_dump_inner_ascii(b, elem):
@@ -81,14 +81,14 @@ def _simple_xml_dump_inner_unicode(b, elem):
     @type elem: Element
     """
     tag = elem.tag
-    b.write(tag.join(("<", ">\n")))
+    b.write(tag.join(("<", ">")))
 
     txt = elem.text
     if txt:
         b.write(txt)
 
     for e in elem:
-        _simple_xml_dump_inner_ascii(b, e)
+        _simple_xml_dump_inner_unicode(b, e)
 
     b.write(tag.join(("</", ">")))
     tail = elem.tail
@@ -96,18 +96,18 @@ def _simple_xml_dump_inner_unicode(b, elem):
         b.write(tail)
 
 
-def simple_xml_dump(root):
+def simple_xml_dump(root, encoding="windows-1252"):
     """
     Simple XML tree generator for elements with nothing but
-    a tag, text, and maybe children.
+    a tag, text, tail, and children. No attributes supported.
 
     @param root: Root element for an xml document
     @return: bytes
     """
-    b = BytesIO()
-    b.write(b'<?xml version="1.0" encoding="windows-1252" standalone="no" ?>')
-    _simple_xml_dump_inner_ascii(b, root)
-    return b.getvalue()
+    b = StringIO()
+    b.write('<?xml version="1.0" encoding="%s" standalone="no" ?>' % encoding)
+    _simple_xml_dump_inner_unicode(b, root)
+    return b.getvalue().encode(encoding)
 
 
 from collections import Iterable, OrderedDict
@@ -190,6 +190,7 @@ class HelloXMLGenerator():
     def __init__(self):
         self.parse_types = {
             str: self.str_toxml,
+            bytes: self.bytes_toxml,
             int: self.int_toxml,
             list: self.list_toxml,
             tuple: self.list_toxml,
@@ -202,12 +203,17 @@ class HelloXMLGenerator():
     def register(self, typ, parsefunc):
         self.parse_types[typ] = parsefunc
 
-    def dispatch(self, obj, name, root):
+    def parse(self, obj, name, root):
         try:
-            parse = self.parse_types[type(obj)]
+            parsefunc = self.parse_types[type(obj)]
         except KeyError as e:
             raise ValueError("Don't know how to parse object of type %s" % e.args[0])
-        return parse(obj, name, root)
+        return parsefunc(obj, name, root)
+
+    def bytes_toxml(self, obj, name, root):
+        #: @type: str
+        obj = obj.decode('utf-8')
+        self.str_toxml(obj, name, root)
 
     def str_toxml(self, obj, name, root):
         string = SubElement(root, "String")
@@ -243,8 +249,12 @@ class HelloXMLGenerator():
         cluster.tail = name_ele.tail = numelts.tail = "\n"
         cluster.text = "\n"
 
-        for name, item in obj:
-            self.dispatch(item, name, cluster)
+        try:
+            for name, item in obj:
+                self.parse(item, name, cluster)
+        except:
+            print(obj)
+            raise
 
     def dict_toxml(self, obj, name, root):
         cluster = SubElement(root, "Cluster")
@@ -257,7 +267,7 @@ class HelloXMLGenerator():
         cluster.text = "\n"
 
         for k, v in obj.items():
-            self.dispatch(v, k, cluster)
+            self.parse(v, k, cluster)
 
     def float_toxml(self, obj, name, root):
         float_ = SubElement(root, 'SGL')
@@ -269,7 +279,7 @@ class HelloXMLGenerator():
         float_.tail = name_ele.tail = val.tail = "\n"
         float_.text = "\n"
 
-    def obj_to_xml(self, obj, result="True"):
+    def obj_to_tree(self, obj, result="True"):
         """
         Main entrypoint. If object is a str, the tree puts the object
         as the sole contents of <Message>. Otherwise, the object is
@@ -279,38 +289,54 @@ class HelloXMLGenerator():
         result_ele = SubElement(reply, "Result")
         result_ele.text = str(result)  # True -> "True", "True" -> "True"
         reply.text = ""
+
+        if isinstance(obj, bytes):
+            obj = obj.decode('utf-8', 'strict')
+
+        # check if object is iterable and not a string
+        try:
+            iter(obj)
+        except TypeError:
+            obj = str(obj)
+        else:
+            pass
+
+        message = SubElement(reply, "Message")
         if isinstance(obj, str):
-            message = SubElement(reply, "Message")
             message.text = obj
             message.tail = ""
-
         else:
             # message is an object. the toplevel object doesn't get
             # the same <cluster>...</cluster> wrapper that nested
             # objects get, so we have to sloppily convert message
-            # to its proper format.
+            # to its proper format. Because we don't know how to
+            # parse an arbitrary object type into an xml tree (since
+            # any conversion function can be registered),
 
-            self.dispatch(obj, "Message", reply)
+            self.parse(obj, "Message", message)
             msg_ele = reply[1]
             msg_ele.tag = "Message"
+            msg_ele.text = ""
             msg_ele.tail = ""
 
-            # msg_ele[0] is the <name>Message</name> element that
-            # doesn't exist in the actual xml
-            del msg_ele[0]
+            # search for element where tag is Name and text is "Message".
+            # If message was an object that was parsed into a cluster,
+            # then it doesn't have the "name" field like a normal cluster
 
-            # nelts = SubElement(message, "NumElts")
-            # nelts.text = str(len(message))
-            # nelts.tail = "\n"
-            #
-            # typ = type(message)
-            # if typ == dict:
+            # maybe_name = msg_ele[0]
+            # if maybe_name.tag == 'Name' and maybe_name.text == 'Message':
+            #     del msg_ele[0]
 
+        return reply
 
+    def obj_to_xml(self, obj, result="True", encoding='windows-1252'):
+        reply = self.obj_to_tree(obj, result)
+        return simple_xml_dump(reply, encoding)
 
-
-        return simple_xml_dump(reply)
+    def tree_to_xml(self, tree, encoding):
+        return simple_xml_dump(tree, encoding)
 
 
 xml_generator = HelloXMLGenerator()
 obj_to_xml = xml_generator.obj_to_xml
+obj_to_tree = xml_generator.obj_to_tree
