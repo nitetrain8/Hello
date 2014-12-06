@@ -279,7 +279,7 @@ class HelloXMLGenerator():
         float_.tail = name_ele.tail = val.tail = "\n"
         float_.text = "\n"
 
-    def obj_to_tree(self, obj, result="True"):
+    def create_hello_tree(self, msg, result="True"):
         """
         Main entrypoint. If object is a str, the tree puts the object
         as the sole contents of <Message>. Otherwise, the object is
@@ -290,47 +290,42 @@ class HelloXMLGenerator():
         result_ele.text = str(result)  # True -> "True", "True" -> "True"
         reply.text = ""
 
-        if isinstance(obj, bytes):
-            obj = obj.decode('utf-8', 'strict')
+        if isinstance(msg, bytes):
+            msg = msg.decode('utf-8', 'strict')
 
         # check if object is iterable and not a string
         try:
-            iter(obj)
+            iter(msg)
         except TypeError:
-            obj = str(obj)
+            msg = str(msg)
         else:
             pass
 
         message = SubElement(reply, "Message")
-        if isinstance(obj, str):
-            message.text = obj
+        if isinstance(msg, str):
+            message.text = msg
             message.tail = ""
         else:
-            # message is an object. the toplevel object doesn't get
-            # the same <cluster>...</cluster> wrapper that nested
-            # objects get, so we have to sloppily convert message
-            # to its proper format. Because we don't know how to
-            # parse an arbitrary object type into an xml tree (since
-            # any conversion function can be registered),
 
-            self.parse(obj, "Message", message)
-            msg_ele = reply[1]
-            msg_ele.tag = "Message"
-            msg_ele.text = ""
-            msg_ele.tail = ""
-
-            # search for element where tag is Name and text is "Message".
-            # If message was an object that was parsed into a cluster,
-            # then it doesn't have the "name" field like a normal cluster
-
-            # maybe_name = msg_ele[0]
-            # if maybe_name.tag == 'Name' and maybe_name.text == 'Message':
-            #     del msg_ele[0]
+            # after parsing the message, change the cluster tag to "message".
+            self.parse(msg, "Message", message)
+            message = reply[1]
+            message.tag = "Message"
+            message.text = ""
+            message.tail = ""
+            cluster = message[0]
+            cluster.tail = ""
 
         return reply
 
-    def obj_to_xml(self, obj, result="True", encoding='windows-1252'):
-        reply = self.obj_to_tree(obj, result)
+    def obj_to_xml(self, obj, name, root=None):
+        if root is None:
+            root = Element("Reply")
+        self.parse(obj, name, root)
+        return root
+
+    def create_hello_xml(self, msg, result="True", encoding='windows-1252'):
+        reply = self.create_hello_tree(msg, result)
         return simple_xml_dump(reply, encoding)
 
     def tree_to_xml(self, tree, encoding):
@@ -338,5 +333,5 @@ class HelloXMLGenerator():
 
 
 xml_generator = HelloXMLGenerator()
-obj_to_xml = xml_generator.obj_to_xml
-obj_to_tree = xml_generator.obj_to_tree
+create_hello_xml = xml_generator.create_hello_xml
+create_hello_tree = xml_generator.create_hello_tree

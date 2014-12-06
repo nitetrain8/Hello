@@ -7,7 +7,7 @@ Created in: PyCharm Community Edition
 
 """
 from collections import OrderedDict
-from hello.mock.util import nextroutine, simple_xml_dump, obj_to_xml, obj_to_tree
+from hello.mock.util import nextroutine, simple_xml_dump, create_hello_xml, obj_to_tree
 
 __author__ = 'Nathan Starkweather'
 
@@ -426,13 +426,13 @@ class LoginError(AuthError):
 from time import time
 
 
-version_info = OrderedDict(
+version_info = OrderedDict((
     ("RIO", "V12.1"),
     ("Server", "V3.1"),
     ("Model", "PBS 3"),
     ("Database", "V2.2"),
     ("Serial Number", "01459C77")
-)
+))
 
 
 class HelloState():
@@ -528,15 +528,15 @@ class HelloState():
         return True
 
     def getversion(self, json=False):
-        reply = OrderedDict(
+        reply = OrderedDict((
             ("Result", "True"),
             ("Message", {"Versions": self._version_info})
-        )
+        ))
 
         if json:
             rv = json_dumps(reply)
         else:
-            rv = obj_to_xml(reply, "True", self.true_reply_xml_encoding)
+            rv = create_hello_xml(reply, "True", self.true_reply_xml_encoding)
 
         return rv
 

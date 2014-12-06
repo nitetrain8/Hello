@@ -626,7 +626,7 @@ class TestXMLUtilities(unittest.TestCase):
         self.generator = HelloXMLGenerator()
 
     def test_obj_to_xml_basic(self):
-        obj_to_xml = self.generator.obj_to_xml
+        obj_to_xml = self.generator.create_hello_xml
 
         obj = [
             ('test1', 'Foo'),
@@ -666,7 +666,7 @@ class TestXMLUtilities(unittest.TestCase):
             raise
 
     def test_obj_to_xml_noniterable(self):
-        obj_to_xml = self.generator.obj_to_xml
+        obj_to_xml = self.generator.create_hello_xml
 
         obj = 5
         actual_txt = obj_to_xml(obj)
