@@ -197,6 +197,7 @@ class HelloXMLGenerator():
             dict: self.dict_toxml,
             float: self.float_toxml,
             OrderedDict: self.dict_toxml,
+            Element: self.ele_toxml,
             type(_ for _ in ""): self.iter_toxml  # generator
         }
 
@@ -209,6 +210,9 @@ class HelloXMLGenerator():
         except KeyError as e:
             raise ValueError("Don't know how to parse object of type %s" % e.args[0])
         return parsefunc(obj, name, root)
+
+    def ele_toxml(self, obj, name, root):
+        root.append(obj)
 
     def bytes_toxml(self, obj, name, root):
         #: @type: str
@@ -279,17 +283,7 @@ class HelloXMLGenerator():
         float_.tail = name_ele.tail = val.tail = "\n"
         float_.text = "\n"
 
-    def create_hello_tree(self, msg, result="True"):
-        """
-        Main entrypoint. If object is a str, the tree puts the object
-        as the sole contents of <Message>. Otherwise, the object is
-        recursively parsed.
-        """
-        reply = Element("Reply")
-        result_ele = SubElement(reply, "Result")
-        result_ele.text = str(result)  # True -> "True", "True" -> "True"
-        reply.text = ""
-
+    def _create_hello_tree_msg(self, msg, reply):
         if isinstance(msg, bytes):
             msg = msg.decode('utf-8', 'strict')
 
@@ -300,7 +294,6 @@ class HelloXMLGenerator():
             msg = str(msg)
         else:
             pass
-
         message = SubElement(reply, "Message")
         if isinstance(msg, str):
             message.text = msg
@@ -316,7 +309,24 @@ class HelloXMLGenerator():
             cluster = message[0]
             cluster.tail = ""
 
+    def hello_tree_from_msg(self, msg, result="True"):
+        """
+        Main entrypoint. If object is a str, the tree puts the object
+        as the sole contents of <Message>. Otherwise, the object is
+        recursively parsed.
+        """
+        reply = Element("Reply")
+        result_ele = SubElement(reply, "Result")
+        result_ele.text = str(result)  # True -> "True", "True" -> "True"
+        reply.text = ""
+
+        self._create_hello_tree_msg(msg, reply)
+
         return reply
+
+    def hello_xml_from_obj(self, obj, name):
+        root = self.obj_to_xml(obj, name)
+        return simple_xml_dump(root)
 
     def obj_to_xml(self, obj, name, root=None):
         if root is None:
@@ -325,7 +335,7 @@ class HelloXMLGenerator():
         return root
 
     def create_hello_xml(self, msg, result="True", encoding='windows-1252'):
-        reply = self.create_hello_tree(msg, result)
+        reply = self.hello_tree_from_msg(msg, result)
         return simple_xml_dump(reply, encoding)
 
     def tree_to_xml(self, tree, encoding):
@@ -334,4 +344,5 @@ class HelloXMLGenerator():
 
 xml_generator = HelloXMLGenerator()
 create_hello_xml = xml_generator.create_hello_xml
-create_hello_tree = xml_generator.create_hello_tree
+hello_tree_from_msg = xml_generator.hello_tree_from_msg
+hello_xml_from_obj = xml_generator.hello_xml_from_obj

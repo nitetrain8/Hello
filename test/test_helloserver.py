@@ -18,12 +18,18 @@ __author__ = 'PBS Biotech'
 test_dir = dirname(__file__)
 temp_dir = join(test_dir, "temp")
 test_input = join(test_dir, "test_input")
-
+test_output = join(test_dir, "test_output")
 
 def setUpModule():
     # Generate test input directory just in case
-    # it doesn't already exist. (For Convenience). 
-    for d in (temp_dir, test_input):
+    # it doesn't already exist. (For Convenience).
+
+    try:
+        rmtree(test_output)
+    except FileNotFoundError:
+        pass
+
+    for d in (temp_dir, test_input, test_output):
         try:
             makedirs(d)
         except FileExistsError:
@@ -36,12 +42,17 @@ def tearDownModule():
         rmtree(temp_dir)
     except FileNotFoundError:
         pass
+    from subprocess import Popen
+    import os
+    files = ' '.join("\"%s\"" % join(test_output, f) for f in os.listdir(test_output))
+    cmd = '"C:/Program Files/Notepad++/notepad++.exe" ' + files
+    Popen(cmd)
 
 
 from hello.mock.server import HelloServer, HelloState, HelloHTTPHandler
 from http.client import HTTPConnection
 from threading import Thread
-from xml.etree.ElementTree import XML as parse_xml, Element
+from xml.etree.ElementTree import XML as parse_xml, Element, tostring as xml_tostring, ParseError
 from json import loads as json_loads
 from collections import OrderedDict
 import sys
@@ -69,6 +80,25 @@ def mock_pv_generator(val):
         while True:
             yield 1, val
     return generator().__next__
+
+
+def dump_to_webbrowser(prefix, xml):
+    import tempfile
+
+    if isinstance(xml, Element):
+        from hello.mock.debug_utils import simple_xml_dump_debug
+        xml = simple_xml_dump_debug(xml)
+    if isinstance(xml, str):
+        mode = 'w'
+    elif isinstance(xml, bytes):
+        mode = 'wb'
+
+        # prefix = prefix.encode('ascii')
+
+    else:
+        raise ValueError("Can't dump object of type %s" % xml.__class__.__name__)
+    file = tempfile.NamedTemporaryFile(mode, prefix=prefix, suffix=".xml", delete=False, dir=test_output)
+    file.write(xml)
 
 
 def init_hello_state():
@@ -274,7 +304,7 @@ Actual Children: %s""" % (
     def maybe_got_xml_instead_of_json(self, doc):
         try:
             parse_xml(doc)
-        except ValueError:
+        except ParseError:
             return False
         else:
             return True
@@ -336,7 +366,12 @@ Actual Children: %s""" % (
                 raise self.failureException("Got wrong document type (expected xml): %s" % actual_xml_doc) from None
             raise
 
-        self.assertEqual(expected_tree, actual_tree)
+        try:
+            self.assertEqual(expected_tree, actual_tree)
+        except self.failureException:
+            dump_to_webbrowser('expected ' + call, expected_tree)
+            dump_to_webbrowser('actual ' + call, actual_tree)
+            raise
         try:
             self.assertEqual(expected_xml_doc, actual_xml_doc)
         except:

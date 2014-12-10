@@ -7,7 +7,7 @@ Created in: PyCharm Community Edition
 
 """
 from collections import OrderedDict
-from hello.mock.util import nextroutine, simple_xml_dump, create_hello_xml, obj_to_tree
+from hello.mock.util import nextroutine, HelloXMLGenerator, simple_xml_dump
 
 __author__ = 'Nathan Starkweather'
 
@@ -204,11 +204,12 @@ class BaseController():
         for attr in self.mv_attrs:
             lv_type = self.name_to_lv_type[attr]
             typ = SubElement(cluster, lv_type)
-            typ.text = ""
+            typ.text = "\n"
             typ.tail = "\n"
 
             name = SubElement(typ, "Name")
             name.text = attr
+            name.tail = "\n"
             val = SubElement(typ, "Val")
 
             if lv_type == 'SGL':
@@ -459,6 +460,8 @@ class HelloState():
         self._version_info = version_info.copy()
         self.true_reply_xml_encoding = "windows-1252"
 
+        self.xml_gen = HelloXMLGenerator()
+
     def step_main_values(self):
         for c in self.controllers:
             c.step()
@@ -474,45 +477,15 @@ class HelloState():
         return self.getMainValues(json)
 
     def get_xml_main_values(self):
-        # Yes, XML really is this goddamn stupid
-        # SubElement and c.mv_toxml modify state in-place.
-        # root = Element("Reply")
-        # root.text = ""
-        # root.tail = "\n"
-        # result = SubElement(root, 'Result')
-        # result.text = "True"
-        # message = SubElement(root, "Message")
-        # message.text = ""
-        # message.tail = "\n"
-        # cluster = SubElement(message, "Cluster")
-        # cluster.text = ""
-        # cluster.tail = "\n"
-        # name = SubElement(cluster, "Name")
-        # name.text = "Message"
-        # name.tail = "\n"
-        # nelements = SubElement(cluster, "NumElts")
-        # nelements.text = str(len(self.controllers))
-        # nelements.tail = "\n"
-        # for c in self.controllers:
-        #     c.mv_toxml(cluster)
-        #
-        message = [(c.name, c.mv_toxml2()) for c in self.controllers]
-
-        reply = (
-            ("Result", "True"),
-            ("Message", message)
-        )
-        rv = (
-            ("Reply", reply),
-        )
-
-        return obj_to_tree(rv)
+        message = [(c.name, c.mv_toxml()) for c in self.controllers if c.name != 'SecondaryHeat']
+        message.append((self.secondaryheat.name, self.secondaryheat.mv_toxml()))
+        return self.xml_gen.hello_tree_from_msg(message)
 
     def getMainValues(self, json=True):
         if json:
             return json_dumps(self.get_dict_main_values(), indent="\t")
         else:
-            return simple_xml_dump(self.get_xml_main_values(), 'windows-1252')
+            return self.xml_gen.tree_to_xml(self.get_xml_main_values(), 'windows-1252')
 
     def login(self, val1, val2, loader, skipvalidate):
         user = val1
@@ -528,15 +501,16 @@ class HelloState():
         return True
 
     def getversion(self, json=False):
-        reply = OrderedDict((
-            ("Result", "True"),
-            ("Message", {"Versions": self._version_info})
-        ))
 
+        message = {"Versions": self._version_info}
         if json:
+            reply = OrderedDict((
+                ("Result", "True"),
+                ("Message", message)
+            ))
             rv = json_dumps(reply)
         else:
-            rv = create_hello_xml(reply, "True", self.true_reply_xml_encoding)
+            rv = self.xml_gen.create_hello_xml(message, "True", self.true_reply_xml_encoding)
 
         return rv
 
