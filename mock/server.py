@@ -114,6 +114,20 @@ class ArgumentError(UnrecognizedCommand):
             self.reply = self.xml_reply()
 
 
+class LoginError(ArgumentError):
+    def __init__(self, rsp_fmt):
+        self.result = "False"
+        self.what = "Bad Login"
+        self.message = 'Username/password incorrect %s' % E_BAD_LOGIN
+        self.args = self.message,
+        self.err_code = E_BAD_LOGIN
+        self.rsp_fmt = rsp_fmt
+        if rsp_fmt == 'json':
+            self.reply = self.json_reply()
+        else:
+            self.reply = self.xml_reply()
+
+
 class MissingArgument(ArgumentError):
     def __init__(self, what, rsp_fmt):
         self.result = "False"
@@ -368,7 +382,8 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         if self.server.state.login(val1, val2, loader, skipvalidate):
             return self.send_good_set_reply()
         else:
-            raise ArgumentError("Bad Login", E_BAD_LOGIN, 'xml', 'Username/password incorrect %s' % E_BAD_LOGIN)
+
+            raise LoginError('json' if json else 'xml')
 
     def logout(self, params, real_mode=False):
 

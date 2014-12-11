@@ -346,3 +346,61 @@ xml_generator = HelloXMLGenerator()
 create_hello_xml = xml_generator.create_hello_xml
 hello_tree_from_msg = xml_generator.hello_tree_from_msg
 hello_xml_from_obj = xml_generator.hello_xml_from_obj
+
+
+from json import JSONEncoder
+from json.encoder import encode_basestring_ascii, encode_basestring, FLOAT_REPR, INFINITY, c_make_encoder, \
+    _make_iterencode
+
+
+class HelloJSONEncoder(JSONEncoder):
+    def iterencode(self, o, _one_shot=False):
+        """Encode the given object and yield each string
+        representation as available.
+
+        For example::
+
+            for chunk in JSONEncoder().iterencode(bigobject):
+                mysocket.write(chunk)
+
+        """
+        if self.check_circular:
+            markers = {}
+        else:
+            markers = None
+        if self.ensure_ascii:
+            _encoder = encode_basestring_ascii
+        else:
+            _encoder = encode_basestring
+
+        def floatstr(o, allow_nan=self.allow_nan,
+                     _repr=FLOAT_REPR, _inf=INFINITY, _neginf=-INFINITY):
+            # Check for specials.  Note that this type of test is processor
+            # and/or platform-specific, so do tests which don't depend on the
+            # internals.
+
+            if o != o:
+                text = 'NaN'
+            elif o == _inf:
+                text = 'Infinity'
+            elif o == _neginf:
+                text = '-Infinity'
+            else:
+                return "%.5f" % o
+
+            if not allow_nan:
+                raise ValueError(
+                    "Out of range float values are not JSON compliant: " +
+                    repr(o))
+
+            return text
+
+        _iterencode = _make_iterencode(
+            markers, self.default, _encoder, self.indent, floatstr,
+            self.key_separator, self.item_separator, self.sort_keys,
+                self.skipkeys, _one_shot)
+        return _iterencode(o, 0)
+
+
+json_generator = HelloJSONEncoder(indent="\t")
+dumps = json_generator.encode

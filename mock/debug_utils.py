@@ -54,3 +54,5 @@ def simple_xml_dump_debug(root):
     b.write('<?xml version="1.0" encoding="utf-8" standalone="no" ?>')
     _simple_xml_dump_inner_unicode_debug(b, root, 0)
     return '\n'.join(filter(str.strip, b.getvalue().splitlines()))
+
+from json import dumps

@@ -44,9 +44,11 @@ def tearDownModule():
         pass
     from subprocess import Popen
     import os
-    files = ' '.join("\"%s\"" % join(test_output, f) for f in os.listdir(test_output))
-    cmd = '"C:/Program Files/Notepad++/notepad++.exe" ' + files
-    Popen(cmd)
+    files = os.listdir(test_output)
+    if files:
+        files = ' '.join("\"%s\"" % join(test_output, f) for f in files)
+        cmd = '"C:/Program Files/Notepad++/notepad++.exe" ' + files
+        Popen(cmd)
 
 
 from hello.mock.server import HelloServer, HelloState, HelloHTTPHandler
@@ -253,8 +255,14 @@ class HelloServerTestBase():
         """
         @type self: T >= unittest.TestCase
         """
+        try:
+            siblings = ", ".join(''.join(("<", e.tag, ":", e.text or '', ">")) for e in chain[-1]
+                                    if e not in (expected, actual))
+        except IndexError:
+            siblings = "None"
         msg += """
 Element chain: %s
+Siblings: %s
 expected.tag: %r\t|actual.tag: %r
 expected.text: %r\t|actual.text: %r
 expected.attrib: %r\t|actual.attrib: %r
@@ -263,6 +271,7 @@ expected.tail: %r\t|actual.tail: %r
 Expected Children: %s
 Actual Children: %s""" % (
                             ", ".join(e.tag.join(("<", ">")) for e in chain),
+                            siblings,
                             expected.tag, actual.tag,
                             expected.text, actual.text,
                             ', '.join("%s=%s" % i for i in expected.attrib), \
@@ -323,8 +332,6 @@ Actual Children: %s""" % (
         """
         if rawname is None:
             rawname = call + ".json"
-        if not rawname.endswith(".json"):
-            rawname += ".json"
         expected_json_doc = load_test_input(rawname)
         expected_dict = parse_json(expected_json_doc)
         rsp, actual_json_doc = self.basic_query(call, params)

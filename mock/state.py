@@ -191,7 +191,7 @@ class BaseController():
         cluster.tail = "\n"
 
         name = SubElement(cluster, "Name")
-        name.text = self.name.capitalize()
+        name.text = self.name
         name.tail = "\n"
         vals = SubElement(cluster, 'NumElts')
         vals.text = str(len(self.mv_attrs))
@@ -490,7 +490,8 @@ class HelloState():
     def login(self, val1, val2, loader, skipvalidate):
         user = val1
         pwd = val2
-        if self._login_info[user.lower()] == pwd:
+        missing = object()
+        if self._login_info.get(user.lower(), missing) == pwd:
             self._logged_in = True
             self._last_login = time()
             return True
