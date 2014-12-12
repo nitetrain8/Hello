@@ -192,7 +192,8 @@ def load_test_input(name):
 # noinspection PyAttributeOutsideInit
 class HelloServerTestBase():
 
-    handler_use_real_mode = False
+    real_mode = True
+    allow_json = True
 
     def setUp(self):
         """
@@ -206,7 +207,8 @@ class HelloServerTestBase():
         self.addTypeEqualityFunc(dict, self.assertMappingEqual)
         self.addTypeEqualityFunc(OrderedDict, self.assertMappingEqual)
 
-        HelloHTTPHandler.real_mode = self.handler_use_real_mode
+        HelloHTTPHandler.real_mode = self.real_mode
+        HelloHTTPHandler.allow_json = self.allow_json
 
     def tearDown(self):
         self.server.shutdown()
@@ -367,9 +369,9 @@ Actual Children: %s""" % (
         rsp, actual_xml_doc = self.basic_query(call, params)
         try:
             actual_tree = parse_xml(actual_xml_doc)
-        except ValueError:
+        except ParseError:
             # bad xml. Check if we got an xml reply by mistake
-            if self.maybe_got_xml_instead_of_xml(actual_xml_doc):
+            if self.maybe_got_json_instead_of_xml(actual_xml_doc):
                 raise self.failureException("Got wrong document type (expected xml): %s" % actual_xml_doc) from None
             raise
 
@@ -399,6 +401,7 @@ class TestGetMainValues(HelloServerTestBase, unittest.TestCase):
         params = ()
         self.do_test_expect_xml(call, params)
 
+    @unittest.expectedFailure
     def test_xml2(self):
         """
         Basic call. Json = False.
@@ -409,6 +412,7 @@ class TestGetMainValues(HelloServerTestBase, unittest.TestCase):
         )
         self.do_test_expect_xml(call, params)
 
+    @unittest.expectedFailure
     def test_xml3(self):
         """
         Basic call. Json = 0.
@@ -422,7 +426,7 @@ class TestGetMainValues(HelloServerTestBase, unittest.TestCase):
 
     def test_xml4(self):
         """
-        Basic call. No parameters.
+        Basic call. call in lowercase.
         """
 
         call = 'getMainValues'.lower()
@@ -512,6 +516,38 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
 
         self.do_test_expect_xml(call, params)
 
+    @unittest.expectedFailure
+    def test_login_xml5(self):
+        call = 'login'
+        params = (
+            ("val1", "user1"),
+            ("val2", "12345"),
+            ("json", "False")
+        )
+        self.do_test_expect_xml(call, params)
+
+    @unittest.expectedFailure
+    def test_login_xml6(self):
+        call = 'login'
+        params = (
+            ("val1", "user1"),
+            ("val2", "12345"),
+            ("json", "0")
+        )
+
+        self.do_test_expect_xml(call, params)
+
+    @unittest.expectedFailure
+    def test_login_xml7(self):
+        call = 'login'
+        params = (
+            ("val1", "user1"),
+            ("val2", "12345"),
+            ("json", "")
+        )
+
+        self.do_test_expect_xml(call, params)
+
     def test_login_failure_xml1(self):
         call = 'login'
         params = (
@@ -533,7 +569,6 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
     def test_login_failure_xml3(self):
         call = 'login'
         params = ()
-
         self.do_test_expect_xml(call, params, 'login_bad.xml')
 
     def test_login_json1(self):
@@ -542,7 +577,9 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
             ("val1", "user1"),
             ("val2", "12345"),
             ("loader", "Authenticating"),
-            ("skipValidate", "True")
+            ("skipValidate", "True"),
+            ("json", "True")
+
         )
 
         self.do_test_expect_json(call, params)
@@ -553,7 +590,9 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
             ("val1", "pbstech"),
             ("val2", "727246"),
             ("loader", "Authenticating"),
-            ("skipValidate", "True")
+            ("skipValidate", "True"),
+            ("json", "True")
+
         )
 
         self.do_test_expect_json(call, params)
@@ -562,7 +601,9 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
         call = 'login'
         params = (
             ("val1", "pbstech"),
-            ("val2", "727246")
+            ("val2", "727246"),
+            ("json", "True")
+
         )
 
         self.do_test_expect_json(call, params)
@@ -571,7 +612,20 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
         call = 'login'
         params = (
             ("val1", "user1"),
-            ("val2", "12345")
+            ("val2", "12345"),
+            ("json", "True")
+
+        )
+
+        self.do_test_expect_json(call, params)
+
+    def test_login_json5(self):
+        call = 'login'
+        params = (
+            ("val1", "user1"),
+            ("val2", "12345"),
+            ("json", "1")
+
         )
 
         self.do_test_expect_json(call, params)
@@ -580,7 +634,8 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
         call = 'login'
         params = (
             ("val1", "bad"),
-            ("val2", "81972")
+            ("val2", "81972"),
+            ("json", "True")
         )
 
         self.do_test_expect_json(call, params, "login_bad.json")
@@ -589,14 +644,17 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
         call = 'login'
         params = (
             ("val1", ""),
-            ("val2", "")
+            ("val2", ""),
+            ("json", "1")
         )
 
         self.do_test_expect_json(call, params, "login_bad.json")
 
     def test_login_failure_json3(self):
         call = 'login'
-        params = ()
+        params = (
+            ("json", "True"),
+        )
 
         self.do_test_expect_json(call, params, "login_bad.json")
 
@@ -604,17 +662,125 @@ class TestLogin(HelloServerTestBase, unittest.TestCase):
         call = 'login'
         params = (
             ("foo", "bar"),
+            ("json", "True")
         )
 
         self.do_test_expect_json(call, params, "login_bad.json")
 
+
+class TestGetMainValues_Ideal(TestGetMainValues):
+    real_mode = False
+
+    def test_xml2(self):
+        """
+        Basic call. Json = False.
+        """
+        call = 'getMainValues'
+        params = (
+            ('json', 'False'),
+        )
+        self.do_test_expect_xml(call, params)
+
+    def test_xml3(self):
+        """
+        Basic call. Json = 0.
+        """
+
+        call = 'getMainValues'
+        params = (
+            ('json', '0'),
+        )
+        self.do_test_expect_xml(call, params)
+
+
+class TestLogin_Ideal(TestLogin):
+    real_mode = False
+
+    def test_login_failure_json3(self):
+        call = 'login'
+        params = (
+            ("json", "True"),
+        )
+
+        self.do_test_expect_json(call, params, "login_bad_ideal.json")
+
+    def test_login_failure_json4(self):
+        call = 'login'
+        params = (
+            ('val1', 'user1'),
+            ('val2', '12345'),
+            ("foo", "bar"),
+            ("json", "True")
+        )
+
+        self.do_test_expect_json(call, params, "login_bad_foobar.json")
+
+    def test_login_failure_xml3(self):
+        call = 'login'
+        params = ()
+        self.do_test_expect_xml(call, params, 'login_bad_ideal.xml')
+
     def test_login_failure_xml4(self):
         call = 'login'
         params = (
+            ('val1', 'user1'),
+            ('val2', '12345'),
             ("foo", "bar"),
         )
+        self.do_test_expect_xml(call, params, 'login_bad_foobar.xml')
 
-        self.do_test_expect_xml(call, params, "login_bad.xml")
+    def test_login_failure_xml5(self):
+        call = 'login'
+        params = ()
+        self.do_test_expect_xml(call, params, 'login_bad_missingarg.xml')
+
+
+class TestLogout(HelloServerTestBase, unittest.TestCase):
+    def test_xml1(self):
+        call = 'logout'
+        params = ()
+        self.do_test_expect_xml(call, params)
+
+    def test_xml_fail1(self):
+        call = 'logout'
+        params = (
+            ('foo', 'bar'),
+        )
+        self.do_test_expect_xml(call, params, 'logout_bad_real.xml')
+
+    def test_json1(self):
+        call = 'logout'
+        params = (
+            ('json', 'true'),
+        )
+        self.do_test_expect_json(call, params)
+
+    def test_json_fail1(self):
+        call = 'logout'
+        params = (
+            ('json', 'true'),
+            ('foo', 'bar')
+        )
+        self.do_test_expect_json(call, params, 'logout_bad_real.json')
+
+
+class TestLogout_ideal(TestLogout):
+    real_mode = False
+
+    def test_json_fail1(self):
+        call = 'logout'
+        params = (
+            ('json', 'true'),
+            ('foo', 'bar')
+        )
+        self.do_test_expect_json(call, params, 'logout_bad_ideal.json')
+
+    def test_xml_fail1(self):
+        call = 'logout'
+        params = (
+            ('foo', 'bar'),
+        )
+        self.do_test_expect_xml(call, params, 'logout_bad_ideal.xml')
 
 
 if __name__ == '__main__':

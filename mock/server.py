@@ -36,7 +36,7 @@ class HelloServerException(Exception):
         self.result = args
         self.message = args
 
-    def json_reply(self):
+    def json_reply(self, encoding='UTF-8'):
         """
         The json reply is simple enough to write out directly.
         Also, this avoids having to awkwardly make an OrderedDict
@@ -44,12 +44,12 @@ class HelloServerException(Exception):
         followed by a call to json.dumps().
         """
         reply = """{
-\t"result": "%s",
-\t"message": "%s"
-}""" % (self.result, self.message)
-        return reply.encode('UTF-8')
+"result": "%s",
+"message": "%s"
+}""" % (self.result, self.message.replace("\"", "\\\""))
+        return reply.encode(encoding)
 
-    def xml_reply(self):
+    def xml_reply(self, encoding='UTF-8'):
         reply = Element("Reply")
         result = SubElement(reply, "Result")
         result.text = self.result
@@ -58,7 +58,7 @@ class HelloServerException(Exception):
 
         # for some reason, "True" replies encode in windows-1252,
         # but "False" replies (or at least some) encode in UTF-8 (???)
-        return simple_xml_dump(reply, 'UTF-8')
+        return simple_xml_dump(reply, encoding)
 
 
 class BadPath(HelloServerException):
@@ -80,15 +80,15 @@ class UnrecognizedCommand(HelloServerException):
     """ User asked for something weird.
     """
 
-    def __init__(self, cmd, rsp_fmt="xml"):
+    def __init__(self, cmd, json_rsp):
         self.args = cmd,
         self.cmd = cmd
         self.err_code = E_UNRECOGNIZED_CMD
         self.result = "False"
         self.message = "Unrecognized Command: %s" % self.err_code
-        self.rsp_fmt = rsp_fmt
+        self.rsp_fmt = 'json' if json_rsp else 'xml'
 
-        if rsp_fmt == 'json':
+        if json_rsp:
             self.reply = self.json_reply()
         else:
             self.reply = self.xml_reply()
@@ -97,7 +97,7 @@ class UnrecognizedCommand(HelloServerException):
 class ArgumentError(UnrecognizedCommand):
     """ User asked for something known, but with bad arguments.
     """
-    def __init__(self, what, err_code, rsp_fmt, msg=None):
+    def __init__(self, what, err_code, json_rsp, msg=None):
         self.result = "False"
         self.what = what
         if msg:
@@ -106,45 +106,46 @@ class ArgumentError(UnrecognizedCommand):
             self.message = "Unrecognized %s: %s" % (what, err_code)
         self.args = self.message,
         self.err_code = err_code
-        self.rsp_fmt = rsp_fmt
+        self.rsp_fmt = 'json' if json_rsp else 'xml'
 
-        if rsp_fmt == 'json':
+        if json_rsp:
             self.reply = self.json_reply()
         else:
             self.reply = self.xml_reply()
 
 
 class LoginError(ArgumentError):
-    def __init__(self, rsp_fmt):
+    def __init__(self, json_rsp):
         self.result = "False"
         self.what = "Bad Login"
         self.message = 'Username/password incorrect %s' % E_BAD_LOGIN
         self.args = self.message,
         self.err_code = E_BAD_LOGIN
-        self.rsp_fmt = rsp_fmt
-        if rsp_fmt == 'json':
+        self.rsp_fmt = 'json' if json_rsp else 'xml'
+
+        if json_rsp:
             self.reply = self.json_reply()
         else:
             self.reply = self.xml_reply()
 
 
 class MissingArgument(ArgumentError):
-    def __init__(self, what, rsp_fmt):
+    def __init__(self, what, json_rsp):
         self.result = "False"
         self.what = what
         self.err_code = E_MISSING_ARG
-        self.message = "Missing Argument %s: %s" % (what, self.err_code)
+        self.message = "Missing Argument: \"%s\". Code: %s" % (what, self.err_code)
         self.args = self.message,
-        self.rsp_fmt = rsp_fmt
+        self.rsp_fmt = 'json' if json_rsp else 'xml'
 
-        if rsp_fmt == 'json':
+        if json_rsp:
             self.reply = self.json_reply()
         else:
             self.reply = self.xml_reply()
 
 
 class UnexpectedArgument(ArgumentError):
-    def __init__(self, what, rsp_fmt):
+    def __init__(self, what, json_rsp):
         if not isinstance(what, str):
             if isinstance(what, dict):
                 what = '(' + ', '.join("%s=%s" % i for i in what.items()) + ")"
@@ -155,9 +156,9 @@ class UnexpectedArgument(ArgumentError):
         self.err_code = E_UNEXPECTED_ARG
         self.message = "Unexpected Argument(s) %s: %s" % (what, self.err_code)
         self.args = self.message,
-        self.rsp_fmt = rsp_fmt
+        self.rsp_fmt = 'json' if json_rsp else 'xml'
 
-        if rsp_fmt == 'json':
+        if json_rsp:
             self.reply = self.json_reply()
         else:
             self.reply = self.xml_reply()
@@ -176,8 +177,9 @@ class UnknownInternalError(HelloServerException):
         self.reply = self.json_reply()
 
 
+# from pysrc.snippets.metas import pfc_meta
+# class HelloHTTPHandler(SimpleHTTPRequestHandler, metaclass=pfc_meta):
 class HelloHTTPHandler(SimpleHTTPRequestHandler):
-
     """ This is the class that implements the actual command
      handling functionality. What we think of as the "Web Server"
      in our Hello software is split into two in python. In Python,
@@ -187,13 +189,16 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
      all request handling.
     """
 
-    json_true_response = json_dumps(
-        {'result': "True",
-         "message": "True"}
-    ).encode('ascii')
+    json_true_response = """{
+"result": "True",
+"message": "True"
+}""".encode('windows-1252')
 
     xml_true_response = '<?xml version="1.0" encoding="windows-1252" standalone="no" ?>' \
-                        '<Reply><Result>True</Result><Message>True</Message></Reply>'.encode('ascii')
+                        '<Reply>' \
+                            '<Result>True</Result>' \
+                            '<Message>True</Message>' \
+                        '</Reply>'.encode('windows-1252')
 
     # real_mode: parse and handle arguments the same way
     # the real (labview) webserver handles them. Turning
@@ -242,9 +247,20 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         try:
             qs = self.parse_path(self.path)
             call, params = self.parse_qs(qs, not self.real_mode)
-            handler = getattr(self, call, None)
+
+            # A suffix is appended to the name of methods is important
+            # to ensure that a malicious 3rd party can't access arbitrary
+            # functions on the handler class by passing in names of known
+            # private handler methods.
+            # A proper fix would be using an explicit mapping to handle
+            # dispatches. That can be on the todo list if/when hellohttphandler
+            # and helloserver are merged into a single webserver class
+
+            method_name = call + "_wsh"
+
+            handler = getattr(self, method_name, None)
             if handler is None:
-                raise UnrecognizedCommand(call)
+                raise UnrecognizedCommand(call, 'xml')
             handler(params, self.real_mode)
         except BadQueryString as e:
             self.send_error(400, "Bad query string: \"%s\"" % e.string)
@@ -298,7 +314,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
             body = body.encode("ascii")
         self.wfile.write(body)
 
-    def send_reply2(self, code, body, content_type='xml'):
+    def send_reply_with_code(self, code, body, content_type='xml'):
         self.send_response(code)
         self.send_header("Content-Length", len(body))
         self.send_header("Content-Type", "application/" + content_type)
@@ -323,12 +339,13 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
     def send_bad_reply(self, message, content_type='xml'):
 
         if content_type == 'xml':
-            reply = Element("Reply")
-            result = SubElement(reply, "Result")
-            result.text = "False"
-            message = SubElement(reply, "Message")
-            message.text = message
-            reply = xml_tostring(reply, 'us-ascii')
+
+            reply = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>' \
+                                '<Reply>' \
+                                '<Result>True</Result>' \
+                                '<Message>%s</Message>' \
+                                '</Reply>' % message
+            reply = reply.encode('UTF-8')
         else:
             reply = json_dumps(
                 {
@@ -339,7 +356,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
         self.send_reply(reply, content_type)
 
-    def getmainvalues(self, params, real_mode=False):
+    def getmainvalues_wsh(self, params, real_mode=False):
         """
         @param params: query string kv pairs
         @type params: dict
@@ -349,7 +366,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
         json = self._get_json_from_kw(params, real_mode)
         if params:
-            raise UnexpectedArgument(params, 'json' if json else 'xml')
+            raise UnexpectedArgument(params, json)
 
         state = self.server.state.get_update(json)
         if state:
@@ -357,7 +374,32 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         else:
             raise UnknownInternalError("Failed to get update from server")
 
-    def login(self, params, real_mode=False):
+    def _get_json_from_kw(self, params, real_mode):
+
+        json = params.pop('json', None)
+
+        # json not in kw
+        if json is None:
+            return False
+
+        # if json is passed to the real hello webserver,
+        # the response is json regardless of the actual value
+        if real_mode:
+            return True
+
+        jl = json.lower()
+
+        valid_false = {'0', 'false', ""}
+        valid_true = {'1', 'true'}
+
+        if jl in valid_false:
+            return False
+        elif jl in valid_true:
+            return True
+        else:
+            raise UnexpectedArgument("json=%s" % json, 'xml')
+
+    def login_wsh(self, params, real_mode=False):
 
         if self.allow_json:
             json = self._get_json_from_kw(params, real_mode)
@@ -368,7 +410,10 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
             val1 = params.pop("val1")  # user
             val2 = params.pop("val2")  # pwd
         except KeyError as e:
-            raise MissingArgument(e.args[0], 'json' if json else 'xml')
+            if not self.real_mode:
+                raise MissingArgument(e.args[0], json)
+            else:
+                raise LoginError(json)
 
         # No one knows what these two keys do.
         # They don't seem to be necessary to login
@@ -377,15 +422,15 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         skipvalidate = params.pop("skipvalidate", "")
 
         if not real_mode and params:
-            raise UnexpectedArgument(params, 'json' if json else 'xml')
+            raise UnexpectedArgument(params, json)
 
         if self.server.state.login(val1, val2, loader, skipvalidate):
-            return self.send_good_set_reply()
+            return self.send_good_set_reply('json' if json else 'xml')
         else:
 
-            raise LoginError('json' if json else 'xml')
+            raise LoginError(json)
 
-    def logout(self, params, real_mode=False):
+    def logout_wsh(self, params, real_mode=False):
 
         if self.allow_json:
             json = self._get_json_from_kw(params, real_mode)
@@ -393,34 +438,14 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
             json = False
 
         if params and not real_mode:
-            raise UnexpectedArgument(params, 'json' if json else 'xml')
+            raise UnexpectedArgument(params, json)
 
         if self.server.state.logout():
-            return self.send_good_set_reply()
+            return self.send_good_set_reply('json' if json else 'xml')
         else:
             raise UnknownInternalError("Failed to logout")
 
-    def _get_json_from_kw(self, params, real_mode):
-
-        json = params.pop('json', None)
-
-        # json not in kw
-        if json is None:
-            return False
-
-        if real_mode:
-            return True
-
-        jl = json.lower()
-
-        if jl == '0' or jl == 'false':
-            return False
-        elif jl == '1' or jl == 'true':
-            return True
-        else:
-            raise UnexpectedArgument("json=%s" % json, 'xml')
-
-    def getversion(self, params, real_mode=False):
+    def getversion_wsh(self, params, real_mode=False):
 
         if self.allow_json:
             json = self._get_json_from_kw(params, real_mode)
@@ -429,26 +454,26 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
         if not real_mode:
             if params:
-                raise UnexpectedArgument(params, 'json' if json else 'xml')
+                raise UnexpectedArgument(params, json)
 
         version = self.server.state.getversion(json)
         if version:
-            self.send_reply(version, 'json' if json else 'xml')
+            self.send_reply(version, json)
         else:
             raise UnknownInternalError("Error Getting Version Info")
 
-    def getmaininfo(self, params, real_mode=False):
+    def getmaininfo_wsh(self, params, real_mode=False):
         if self.allow_json:
             json = self._get_json_from_kw(params, real_mode)
         else:
             json = False
 
         if not real_mode and params:
-            raise UnexpectedArgument(params, 'json' if json else 'xml')
+            raise UnexpectedArgument(params, json)
 
         main_info = self.server.state.getmaininfo(json)
         if main_info:
-            self.send_reply(main_info, 'json' if json else 'xml')
+            self.send_reply(main_info, json)
         else:
             raise UnknownInternalError("Error Getting Main Info")
 

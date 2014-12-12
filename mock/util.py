@@ -349,11 +349,16 @@ hello_xml_from_obj = xml_generator.hello_xml_from_obj
 
 
 from json import JSONEncoder
-from json.encoder import encode_basestring_ascii, encode_basestring, FLOAT_REPR, INFINITY, c_make_encoder, \
+from json.encoder import encode_basestring_ascii, encode_basestring, FLOAT_REPR, INFINITY, \
     _make_iterencode
 
 
 class HelloJSONEncoder(JSONEncoder):
+    """ This subclass existes entirely due to the fact that
+    there is no built-in (public), accessible way to control
+    the json representation of floats. So, this subclass
+    fixes that.
+    """
     def iterencode(self, o, _one_shot=False):
         """Encode the given object and yield each string
         representation as available.
