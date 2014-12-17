@@ -185,6 +185,12 @@ class HelloXMLGenerator():
       factory function to modify the tree in-place, rather than
       returning values.
 
+    Also note that this class is relatively state-less: the only
+    information stored within the instance is the registry of
+    types to parse functions.
+
+    It is intended that a single instance is reused over and over,
+    for efficiency.
 
     """
     def __init__(self):
@@ -196,6 +202,7 @@ class HelloXMLGenerator():
             tuple: self.list_toxml,
             dict: self.dict_toxml,
             float: self.float_toxml,
+            bool: self.bool_toxml,
             OrderedDict: self.dict_toxml,
             Element: self.ele_toxml,
             type(_ for _ in ""): self.iter_toxml  # generator
@@ -243,6 +250,22 @@ class HelloXMLGenerator():
         int_.tail = name_ele.tail = val.tail = "\n"
         int_.text = "\n"
 
+    def bool_toxml(self, obj, name, root):
+        b = SubElement(root, 'Boolean')
+        name_ele = SubElement(b, "Name")
+        name_ele.text = name
+        val = SubElement(b, "Val")
+
+        # Currently, the only boolean passed by XML
+        # by the webserver is the "Magnetic Wheel"
+        # field of getVersion, which passes the bool
+        # as a 0 or 1 (as opposed to True or False).
+
+        val.text = str(int(obj))
+
+        b.tail = name_ele.tail = val.tail = "\n"
+        b.text = "\n"
+
     def list_toxml(self, obj, name, root):
         cluster = SubElement(root, "Cluster")
         name_ele = SubElement(cluster, "Name")
@@ -283,7 +306,7 @@ class HelloXMLGenerator():
         float_.tail = name_ele.tail = val.tail = "\n"
         float_.text = "\n"
 
-    def _create_hello_tree_msg(self, msg, reply):
+    def _create_hello_tree_msg(self, msg, name, reply):
         if isinstance(msg, bytes):
             msg = msg.decode('utf-8', 'strict')
 
@@ -301,7 +324,7 @@ class HelloXMLGenerator():
         else:
 
             # after parsing the message, change the cluster tag to "message".
-            self.parse(msg, "Message", message)
+            self.parse(msg, name, message)
             message = reply[1]
             message.tag = "Message"
             message.text = ""
@@ -309,7 +332,7 @@ class HelloXMLGenerator():
             cluster = message[0]
             cluster.tail = ""
 
-    def hello_tree_from_msg(self, msg, result="True"):
+    def hello_tree_from_msg(self, msg, name=None, result="True"):
         """
         Main entrypoint. If object is a str, the tree puts the object
         as the sole contents of <Message>. Otherwise, the object is
@@ -320,7 +343,7 @@ class HelloXMLGenerator():
         result_ele.text = str(result)  # True -> "True", "True" -> "True"
         reply.text = ""
 
-        self._create_hello_tree_msg(msg, reply)
+        self._create_hello_tree_msg(msg, name, reply)
 
         return reply
 
@@ -334,8 +357,8 @@ class HelloXMLGenerator():
         self.parse(obj, name, root)
         return root
 
-    def create_hello_xml(self, msg, result="True", encoding='windows-1252'):
-        reply = self.hello_tree_from_msg(msg, result)
+    def create_hello_xml(self, msg, name=None, result="True", encoding='windows-1252'):
+        reply = self.hello_tree_from_msg(msg, name, result)
         return simple_xml_dump(reply, encoding)
 
     def tree_to_xml(self, tree, encoding):
@@ -349,8 +372,192 @@ hello_xml_from_obj = xml_generator.hello_xml_from_obj
 
 
 from json import JSONEncoder
-from json.encoder import encode_basestring_ascii, encode_basestring, FLOAT_REPR, INFINITY, \
-    _make_iterencode
+from json.encoder import encode_basestring_ascii, encode_basestring, FLOAT_REPR, INFINITY
+
+
+def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
+                     _key_separator, _item_separator, _sort_keys, _skipkeys, _one_shot,
+                     # # HACK: hand-optimized bytecode; turn globals into locals
+                     ValueError=ValueError,
+                     dict=dict,
+                     float=float,
+                     id=id,
+                     int=int,
+                     isinstance=isinstance,
+                     list=list,
+                     str=str,
+                     tuple=tuple,
+):
+
+
+    if _indent is not None and not isinstance(_indent, str):
+        _indent = ' ' * _indent
+
+    def _iterencode_list(lst, _current_indent_level):
+        if not lst:
+            yield '[]'
+            return
+        if markers is not None:
+            markerid = id(lst)
+            if markerid in markers:
+                raise ValueError("Circular reference detected")
+            markers[markerid] = lst
+        buf = '['
+        if _indent is not None:
+            _current_indent_level += 1
+            newline_indent = '\n' + _indent * _current_indent_level
+            separator = _item_separator + newline_indent
+            buf += newline_indent
+        else:
+            newline_indent = None
+            separator = _item_separator
+        first = True
+        for value in lst:
+            if first:
+                first = False
+            else:
+                buf = separator
+            if isinstance(value, str):
+                yield buf + _encoder(value)
+            elif value is None:
+                yield buf + 'null'
+            elif value is True:
+                yield buf + '1'
+            elif value is False:
+                yield buf + '0'
+            elif isinstance(value, int):
+                # Subclasses of int/float may override __str__, but we still
+                # want to encode them as integers/floats in JSON. One example
+                # within the standard library is IntEnum.
+                yield buf + str(int(value))
+            elif isinstance(value, float):
+                # see comment above for int
+                yield buf + _floatstr(float(value))
+            else:
+                yield buf
+                if isinstance(value, (list, tuple)):
+                    chunks = _iterencode_list(value, _current_indent_level)
+                elif isinstance(value, dict):
+                    chunks = _iterencode_dict(value, _current_indent_level)
+                else:
+                    chunks = _iterencode(value, _current_indent_level)
+                yield from chunks
+        if newline_indent is not None:
+            _current_indent_level -= 1
+            yield '\n' + _indent * _current_indent_level
+        yield ']'
+        if markers is not None:
+            del markers[markerid]
+
+    def _iterencode_dict(dct, _current_indent_level):
+        if not dct:
+            yield '{}'
+            return
+        if markers is not None:
+            markerid = id(dct)
+            if markerid in markers:
+                raise ValueError("Circular reference detected")
+            markers[markerid] = dct
+        yield '{'
+        if _indent is not None:
+            _current_indent_level += 1
+            newline_indent = '\n' + _indent * _current_indent_level
+            item_separator = _item_separator + newline_indent
+            yield newline_indent
+        else:
+            newline_indent = None
+            item_separator = _item_separator
+        first = True
+        if _sort_keys:
+            items = sorted(dct.items(), key=lambda kv: kv[0])
+        else:
+            items = dct.items()
+        for key, value in items:
+            if isinstance(key, str):
+                pass
+            # JavaScript is weakly typed for these, so it makes sense to
+            # also allow them.  Many encoders seem to do something like this.
+            elif isinstance(key, float):
+                # see comment for int/float in _make_iterencode
+                key = _floatstr(float(key))
+            elif key is True:
+                key = '1'
+            elif key is False:
+                key = '0'
+            elif key is None:
+                key = 'null'
+            elif isinstance(key, int):
+                # see comment for int/float in _make_iterencode
+                key = str(int(key))
+            elif _skipkeys:
+                continue
+            else:
+                raise TypeError("key " + repr(key) + " is not a string")
+            if first:
+                first = False
+            else:
+                yield item_separator
+            yield _encoder(key)
+            yield _key_separator
+            if isinstance(value, str):
+                yield _encoder(value)
+            elif value is None:
+                yield 'null'
+            elif value is True:
+                yield '1'
+            elif value is False:
+                yield '0'
+            elif isinstance(value, int):
+                # see comment for int/float in _make_iterencode
+                yield str(int(value))
+            elif isinstance(value, float):
+                # see comment for int/float in _make_iterencode
+                yield _floatstr(float(value))
+            else:
+                if isinstance(value, (list, tuple)):
+                    chunks = _iterencode_list(value, _current_indent_level)
+                elif isinstance(value, dict):
+                    chunks = _iterencode_dict(value, _current_indent_level)
+                else:
+                    chunks = _iterencode(value, _current_indent_level)
+                yield from chunks
+        if newline_indent is not None:
+            _current_indent_level -= 1
+            yield '\n' + _indent * _current_indent_level
+        yield '}'
+        if markers is not None:
+            del markers[markerid]
+
+    def _iterencode(o, _current_indent_level):
+        if isinstance(o, str):
+            yield _encoder(o)
+        elif o is None:
+            yield 'null'
+        elif o is True:
+            yield '1'
+        elif o is False:
+            yield '0'
+        elif isinstance(o, int):
+            # see comment for int/float in _make_iterencode
+            yield str(int(o))
+        elif isinstance(o, float):
+            # see comment for int/float in _make_iterencode
+            yield _floatstr(float(o))
+        elif isinstance(o, (list, tuple)):
+            yield from _iterencode_list(o, _current_indent_level)
+        elif isinstance(o, dict):
+            yield from _iterencode_dict(o, _current_indent_level)
+        else:
+            if markers is not None:
+                markerid = id(o)
+                if markerid in markers:
+                    raise ValueError("Circular reference detected")
+                markers[markerid] = o
+            o = _default(o)
+            yield from _iterencode(o, _current_indent_level)
+            if markers is not None:
+                del markers[markerid]
+    return _iterencode
 
 
 class HelloJSONEncoder(JSONEncoder):
@@ -407,5 +614,5 @@ class HelloJSONEncoder(JSONEncoder):
         return _iterencode(o, 0)
 
 
-json_generator = HelloJSONEncoder(indent="\t")
-dumps = json_generator.encode
+json_generator = HelloJSONEncoder(indent="\t", ensure_ascii=False)
+json_dumps = json_generator.encode

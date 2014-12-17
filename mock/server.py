@@ -458,7 +458,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
         version = self.server.state.getversion(json)
         if version:
-            self.send_reply(version, json)
+            self.send_reply(version, 'json' if json else 'xml')
         else:
             raise UnknownInternalError("Error Getting Version Info")
 
@@ -473,7 +473,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
         main_info = self.server.state.getmaininfo(json)
         if main_info:
-            self.send_reply(main_info, json)
+            self.send_reply(main_info, 'json' if json else 'xml')
         else:
             raise UnknownInternalError("Error Getting Main Info")
 

@@ -174,6 +174,14 @@ def init_hello_state():
     s.maingas.mode = 28
     s.maingas.set_pvgen(mock_pv_generator(s.maingas.pv))
 
+    s._version_info = OrderedDict()
+    s._version_info["RIO"] = "V12.1"
+    s._version_info["Server"] = "V3.1"
+    s._version_info["Model"] = "PBS 3"
+    s._version_info["Database"] = "V2.2"
+    s._version_info["Serial Number"] = "31415D69"
+    s._version_info['Magnetic Wheel'] = True
+
     return s
 
 
@@ -258,7 +266,7 @@ class HelloServerTestBase():
         @type self: T >= unittest.TestCase
         """
         try:
-            siblings = ", ".join(''.join(("<", e.tag, ":", e.text or '', ">")) for e in chain[-1]
+            siblings = ", ".join(''.join(("<", e.tag, ":", repr(e.text or ''), ">")) for e in chain[-1]
                                     if e not in (expected, actual))
         except IndexError:
             siblings = "None"
@@ -781,6 +789,34 @@ class TestLogout_ideal(TestLogout):
             ('foo', 'bar'),
         )
         self.do_test_expect_xml(call, params, 'logout_bad_ideal.xml')
+
+
+class TestGetVersion(HelloServerTestBase, unittest.TestCase):
+    def test_xml1(self):
+        call = 'getVersion'
+        params = ()
+        self.do_test_expect_xml(call, params)
+
+    def test_json1(self):
+        call = 'getVersion'
+        params = (
+            ('json', 'True'),
+        )
+        self.do_test_expect_json(call, params)
+
+
+class TestGetMainInfo(HelloServerTestBase, unittest.TestCase):
+    def test_xml1(self):
+        call = 'getMainInfo'
+        params = ()
+        self.do_test_expect_xml(call, params)
+
+    def test_json1(self):
+        call = 'getMainInfo'
+        params = (
+            ('json', 'True'),
+        )
+        self.do_test_expect_json(call, params)
 
 
 if __name__ == '__main__':

@@ -7,13 +7,12 @@ Created in: PyCharm Community Edition
 
 """
 from collections import OrderedDict
-from hello.mock.util import nextroutine, HelloXMLGenerator, simple_xml_dump
+from hello.mock.util import nextroutine, HelloXMLGenerator, simple_xml_dump, json_dumps
 
 __author__ = 'Nathan Starkweather'
 
 from math import sin as _sin, pi as _pi
 from time import time as _time
-from json import dumps as json_dumps
 from xml.etree.ElementTree import Element, SubElement
 
 
@@ -244,7 +243,7 @@ class BaseController():
 
         return root
 
-    def mi_tojson(self):
+    def mi_todict(self):
         return OrderedDict((attr, getattr(self, attr)) for attr in self.mi_attrs)
 
 
@@ -341,7 +340,7 @@ class AgitationController(StandardController):
         StandardController.__init__(self, "Agitation", pv, sp, man, mode, error, interlocked)
         self.pvUnit = "RPM"
         self.manUnit = "%"
-        self.manName = "Power"
+        self.manName = "Percent Power"
         self.mv_attrs = tuple(a for a in self.mv_attrs if a != 'interlocked')
 
 
@@ -378,9 +377,9 @@ class DOController(TwoWayController):
 class MainGasController(StandardController):
     def __init__(self, pv=0, sp=0, mode=0, error=0, interlocked=0):
         StandardController.__init__(self, "MainGas", pv, sp, mode, error, interlocked)
-        self.pvUnit = ""
+        self.pvUnit = "L/min"
         self.manUnit = "L/min"
-        self.manName = "Gas Flow"
+        self.manName = "Total Flow"
         self.mv_attrs = tuple(a for a in self.mv_attrs if a != 'sp')
 
 
@@ -432,11 +431,13 @@ version_info = OrderedDict((
     ("Server", "V3.1"),
     ("Model", "PBS 3"),
     ("Database", "V2.2"),
-    ("Serial Number", "01459C77")
+    ("Serial Number", "01459C77"),
+    ("Magnetic Wheel", True)
 ))
 
 
 class HelloState():
+
     def __init__(self):
         self.agitation = a = AgitationController(0, 20, 1, 0, 0, 0)
         self.temperature = t = TemperatureController(30, 37, 0, 0, 0, 0)
@@ -448,7 +449,8 @@ class HelloState():
         self.filteroven = f = FilterOvenController(40, 50)
         self.pressure = p = PressureController(0, 0, 0)
 
-        self.controllers = a, t, sh, d, ph, p, l, f, m
+        self._mv_controller_array = a, t, sh, d, ph, p, l, f, m
+        self._mi_controller_array = a, t, d, sh, ph, p, l, f, m
 
         self._login_info = {
             'user1': '12345',
@@ -463,13 +465,13 @@ class HelloState():
         self.xml_gen = HelloXMLGenerator()
 
     def step_main_values(self):
-        for c in self.controllers:
+        for c in self._mv_controller_array:
             c.step()
 
     def get_dict_main_values(self):
         return OrderedDict((
             ("result", "True"),
-            ("message", OrderedDict((c.name.lower(), c.mv_todict2()) for c in self.controllers))
+            ("message", OrderedDict((c.name.lower(), c.mv_todict2()) for c in self._mv_controller_array))
         ))
 
     def get_update(self, json=True):
@@ -477,13 +479,18 @@ class HelloState():
         return self.getMainValues(json)
 
     def get_xml_main_values(self):
-        message = [(c.name, c.mv_toxml()) for c in self.controllers if c.name != 'SecondaryHeat']
+
+        # I don't know why, but the server reply for the
+        # real hello webserver returns main value controllers
+        # in a different order if xml vs json is requested.
+
+        message = [(c.name, c.mv_toxml()) for c in self._mv_controller_array if c.name != 'SecondaryHeat']
         message.append((self.secondaryheat.name, self.secondaryheat.mv_toxml()))
         return self.xml_gen.hello_tree_from_msg(message)
 
     def getMainValues(self, json=True):
         if json:
-            return json_dumps(self.get_dict_main_values(), indent="\t")
+            return json_dumps(self.get_dict_main_values())
         else:
             return self.xml_gen.tree_to_xml(self.get_xml_main_values(), 'windows-1252')
 
@@ -503,17 +510,28 @@ class HelloState():
 
     def getversion(self, json=False):
 
-        message = {"Versions": self._version_info}
+        message = self._version_info
         if json:
             reply = OrderedDict((
-                ("Result", "True"),
-                ("Message", message)
+                ("result", "True"),
+                ("message", message)
             ))
             rv = json_dumps(reply)
         else:
-            rv = self.xml_gen.create_hello_xml(message, "True", self.true_reply_xml_encoding)
+            rv = self.xml_gen.create_hello_xml(message, "Versions",
+                                               "True", self.true_reply_xml_encoding)
 
         return rv
+
+    def getmaininfo(self, json=False):
+        message = OrderedDict((c.name, c.mi_todict()) for c in self._mi_controller_array)
+        message['BioReactorModel'] = self._version_info['Model']
+        if json:
+            msg = json_dumps(OrderedDict((                 ("result", "True"), ("message", message)             )))
+
+            return msg
+        else:
+            return self.xml_gen.create_hello_xml(message, "Message", "True", self.true_reply_xml_encoding)
 
 
 def test1():
