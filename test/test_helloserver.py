@@ -53,7 +53,8 @@ def tearDownModule():
 
 from hello.mock.server import HelloServer, HelloState, HelloHTTPHandler
 from http.client import HTTPConnection
-from threading import Thread
+from threading import Thread, Event
+from queue import Queue
 from xml.etree.ElementTree import XML as parse_xml, Element, tostring as xml_tostring, ParseError
 from json import loads as json_loads
 from collections import OrderedDict
@@ -71,34 +72,50 @@ def parse_json(s):
 
 
 def spawn_server_thread(server):
-    thread = Thread(None, server.serve_forever)
-    thread.daemon = True
-    thread.start()
-    return thread
+    global _test_server_thread, _test_server_queue
+    if _test_server_thread is None:
+        _test_server_thread = Thread(None, server_daemon, None, (_test_server_queue, _test_server_daemon_shutdown))
+        _test_server_thread.daemon = True
+        _test_server_thread.start()
+    _test_server_queue.put(server.serve_forever)
+
+
+_test_server_daemon_shutdown = Event()
+_test_server_queue = Queue()
+_test_server_thread = None
+
+
+def server_daemon(q, signal):
+    # server daemon mainloop
+    # use in host thread to run serve_forever
+    # for server implementations.
+    while not signal.is_set():
+        serve_forever = q.get(True, None)
+        serve_forever(0.01)
 
 
 def mock_pv_generator(val):
-    def generator():
+    def generator(v):
         while True:
-            yield 1, val
-    return generator().__next__
+            yield 1, v
+    return generator(val).__next__
+
+
+import tempfile
+from hello.mock.debug_utils import simple_xml_dump_debug
 
 
 def dump_to_webbrowser(prefix, xml):
-    import tempfile
 
     if isinstance(xml, Element):
-        from hello.mock.debug_utils import simple_xml_dump_debug
         xml = simple_xml_dump_debug(xml)
     if isinstance(xml, str):
         mode = 'w'
     elif isinstance(xml, bytes):
         mode = 'wb'
-
-        # prefix = prefix.encode('ascii')
-
     else:
         raise ValueError("Can't dump object of type %s" % xml.__class__.__name__)
+
     file = tempfile.NamedTemporaryFile(mode, prefix=prefix, suffix=".xml", delete=False, dir=test_output)
     file.write(xml)
 
@@ -209,7 +226,9 @@ class HelloServerTestBase():
         """
         self.state = init_hello_state()
         self.server = HelloServer(TEST_HOST, TEST_PORT, self.state)
-        self.thread = spawn_server_thread(self.server)
+
+        spawn_server_thread(self.server)
+
         self.connection = HTTPConnection(TEST_HOST, TEST_PORT)
         self.addTypeEqualityFunc(Element, self.assertXMLElementEqual)
         self.addTypeEqualityFunc(dict, self.assertMappingEqual)
@@ -221,10 +240,8 @@ class HelloServerTestBase():
     def tearDown(self):
         self.server.shutdown()
         self.connection.close()
-        assert not self.thread.is_alive()
         self.state = None
         self.server = None
-        self.thread = None
         self.connection = None
 
     def assertMappingEqual(self, first, second, keychain=None, msg=None):
@@ -356,7 +373,7 @@ Actual Children: %s""" % (
 
         self.assertEqual(expected_dict, actual_dict)
         try:
-            self.assertEqual(expected_json_doc, actual_json_doc)
+            self.assertEqual(expected_json_doc, actual_json_doc, "Result does not match contents of %s" % rawname)
         except:
             print("EXPECTED (%d chars):" % len(expected_json_doc), file=sys.stderr)
             print(expected_json_doc, file=sys.stderr)

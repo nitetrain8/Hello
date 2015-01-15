@@ -14,7 +14,7 @@ except (ImportError, SystemError):
     try:
         from restutil import recv_restful, BadError, get_call
     except (ImportError, SystemError):
-        from hello.restutil import recv_restful, BadError, get_call
+        from hello.restutil import recv_restful, BadError, get_call, getcall2
 
 from socket import socket
 from select import select
@@ -48,7 +48,10 @@ class Dummy():
             dsock, addr = self.server_sock.accept()
 
             rsock = socket()
-            rsock.connect(self.real_addr)
+            try:
+                rsock.connect(self.real_addr)
+            except TimeoutError:
+                continue
             try:
                 self._forward(dsock, rsock)
             except ConnectionAbortedError:
@@ -84,9 +87,8 @@ class Dummy():
             fromfp.write(tbuf)
             fromfp.flush()
 
-
         def parse_gmi(fbuf, tbuf):
-            call = get_call(fbuf)
+            call, kw = getcall2(fbuf)
             print(call)
             if call == b'getMainInfo':
                 print(tbuf)
@@ -98,6 +100,21 @@ class Dummy():
                 tbuf.extend(b'\r\n0\r\n\r\n')
                 print(tbuf)
             return tbuf
+
+        def parse_none(fbuf, tbuf):
+            qs, (call, kw) = getcall2(fbuf)
+            print(call)
+            if call and "http" not in call.lower():
+                from os.path import dirname, join
+                here = dirname(__file__)
+                qs2 = call + "_" + "_".join("%s-%s" % item for item in kw.items()) + ".dummy"
+                pth = join(here, "dummydata", qs2)
+                with open(pth, 'wb') as f:
+                    start = fbuf.find(b"\r\n\r\n") + 4
+                    f.write(fbuf[start:])
+            return tbuf
+
+
 
         def parse_img(fbf, tbuf):
             thing = fbf.split(b' ', 2)[1]
@@ -129,7 +146,7 @@ class Dummy():
                 elif fp is dfp:
                     if rfp not in wlist:
                         raise BadError("RFP not in wlist")
-                    restful(dfp, rfp, parse_gmi)
+                    restful(dfp, rfp, parse_none)
 
             if self.rsock._closed:
                 print("rsock closed")

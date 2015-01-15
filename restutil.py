@@ -70,12 +70,12 @@ def recv_restful(fp):
         raise BadError("chunked and clength")
 
     elif chunked:
-        # print("parsing chunked")
+        print("parsing chunked")
         parse_chunked_frominto(fp, buf)
         # print("parsed chunked")
 
     elif clength:
-        # print("parsing clength")
+        print("parsing clength")
         chunk = fp.read(clength)
         if len(chunk) != clength:
             raise BadError("chunk != clength")
@@ -95,3 +95,46 @@ def get_call(buf):
         return None
 
 
+def getcall2(buf):
+    nl = buf.find(b"\r\n")
+    buf = buf[:nl]
+    path = buf.split(b" ", 3)[1]
+    qs = path.lstrip(b"/webservice/interface/")
+    qs = qs.decode("utf-8")
+    try:
+        return qs, parse_qs(qs)
+    except ValueError:
+        return qs, (None, None)
+
+from hello.mock.server import BadQueryString, MissingArgument
+
+
+def parse_qs(qs, strict=False):
+    """
+    @rtype: (str, dict)
+    """
+    qs = qs.lstrip("/?&")
+    kvs = qs.split("&")
+
+    assert kvs[0] not in {"/", "/?"}
+    # if kvs[0] in {"/", "/?"}:
+    # kvs = kvs[1:]
+
+    kws = {}
+    for kv in kvs:
+        k, v = kv.lower().split("=")
+        if k in kws:
+            if strict:
+                raise BadQueryString("Got multiple arguments for %s" % k)
+        kws[k] = v
+
+    call = kws.pop('call', None)
+    if call is None:
+        raise ValueError("Call is None")
+
+    try:
+        del kws["_"]
+    except KeyError:
+        pass
+
+    return call, kws

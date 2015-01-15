@@ -406,7 +406,7 @@ class SecondaryHeatController(StandardController):
         StandardController.__init__(self, "SecondaryHeat", pv, sp, mode, error, interlocked)
         self.pvUnit = "\xb0C"
         self.manUnit = "%"
-        self.manName = "Power"
+        self.manName = "Heater Duty"
 
 
 class HelloStateError(Exception):
@@ -450,7 +450,7 @@ class HelloState():
         self.pressure = p = PressureController(0, 0, 0)
 
         self._mv_controller_array = a, t, sh, d, ph, p, l, f, m
-        self._mi_controller_array = a, t, d, sh, ph, p, l, f, m
+        self._mi_controller_array = a, t, d, ph, p, l, f, sh, m
 
         self._login_info = {
             'user1': '12345',
@@ -486,7 +486,7 @@ class HelloState():
 
         message = [(c.name, c.mv_toxml()) for c in self._mv_controller_array if c.name != 'SecondaryHeat']
         message.append((self.secondaryheat.name, self.secondaryheat.mv_toxml()))
-        return self.xml_gen.hello_tree_from_msg(message)
+        return self.xml_gen.hello_tree_from_msg(message, "Message")
 
     def getMainValues(self, json=True):
         if json:
@@ -526,10 +526,15 @@ class HelloState():
     def getmaininfo(self, json=False):
         message = OrderedDict((c.name, c.mi_todict()) for c in self._mi_controller_array)
         message['BioReactorModel'] = self._version_info['Model']
+        message.move_to_end('SecondaryHeat')
+        message.move_to_end('MainGas')
         if json:
-            msg = json_dumps(OrderedDict((                 ("result", "True"), ("message", message)             )))
+            msg = json_dumps(OrderedDict((
+                ("result", "True"),
+                ("message", message)
+            )))
 
-            return msg
+            return msg.encode('utf-8')
         else:
             return self.xml_gen.create_hello_xml(message, "Message", "True", self.true_reply_xml_encoding)
 

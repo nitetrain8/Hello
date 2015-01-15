@@ -127,6 +127,7 @@ class TestServerCalls(unittest.TestCase):
             self.logged_in = False
 
     def tearDown(self):
+        print("teardown")
         if self.app:
             self.app.close()
             self.app = None
@@ -208,7 +209,7 @@ class TestServerCalls(unittest.TestCase):
     def test_getMainInfo(self):
         self.do_get_call('getMainInfo')
 
-    @unittest.skip("Takes a long time")
+    # @unittest.skip("Takes a long time")
     def test_getTrendData(self):
 
         # for brevity, generate all combos of parameters dynamically.
@@ -222,7 +223,7 @@ class TestServerCalls(unittest.TestCase):
                       g, (
                           ('span', s),
                           ('group', g),
-                          ('json', 'true')
+                          ('json', '1')
                       )
                   ) for s in spans for g in groups]
 
@@ -262,6 +263,7 @@ class TestServerCalls(unittest.TestCase):
         self.do_get_call("getLoginStatus", (("Loader", 'Verifying...'),))
 
     def test_getUserInfo(self):
+        self.login()
         self.do_get_call("getUserInfo", (), 'xml', True)
 
     def test_getDORAValues(self):
@@ -328,6 +330,7 @@ class TestServerCalls(unittest.TestCase):
         except IndexError:
             raise SkipTest("No alarms, can't test")
 
+        self.login()
         self.do_set_call('clearAlarm', (('val1', alarm),))
 
     def test_clearAlarmsByType(self):
@@ -339,9 +342,11 @@ class TestServerCalls(unittest.TestCase):
         except IndexError:
             raise SkipTest("No alarms, can't test")
 
+        self.login()
         self.do_set_call("clearAlarmsByType", (('val1', typ),))
 
     def test_revertTrialCal(self):
+        self.login()
         sensors = "pha", "phb", "doa", "dob", "level", "pressure"
         for s in sensors:
             self.do_set_call('revertTrialCal', (('sensor', s),))
@@ -362,6 +367,7 @@ class TestServerCalls(unittest.TestCase):
             ('target1', str(rawvalue))
         )
 
+        self.login()
         self.do_set_call('tryCal', args)
 
         # savetrialcal
@@ -389,6 +395,7 @@ class TestServerCalls(unittest.TestCase):
             ("loader", "Starting+Auto-pilot"),
             ("recipe", r)
         )
+        self.login()
         self.do_set_call('runRecipe', args)
 
         self.do_get_call("getRecipeStep")
@@ -407,6 +414,7 @@ class TestServerCalls(unittest.TestCase):
         self.do_get_call("getReportTypes", (("loader", "Loading+reports..."),))
 
     def test_getReportByType(self):
+        self.login()
         batches = self.app.getbatches()
         if len(batches.names_to_batches) == 0:
             raise SkipTest("No Batches")
@@ -416,7 +424,6 @@ class TestServerCalls(unittest.TestCase):
 
         id = batch.id
         types = "data", "user_events", "recipe_steps", "errors", "alarms"
-
         for t in types:
             args = (
                 ("mode", 'byBatch'),
@@ -551,7 +558,7 @@ class TestServerCalls(unittest.TestCase):
         ctrl = mv['ph']
         if ctrl['mode'] == 0:
             val1 = ctrl['sp']
-            self.app.setdo(ctrl['mode'], val1)
+            self.app.setph(ctrl['mode'], val1)
         else:
             val1 = ctrl['manUp']
             val2 = ctrl['manDown']
@@ -587,7 +594,7 @@ class TestServerCalls(unittest.TestCase):
         self.do_set_call('setSensorState', args)
 
 
-        # auto generate tests
+# auto generate tests
 if len(ipaddys) > 1:
     for addy in ipaddys:
         if not addy.strip():

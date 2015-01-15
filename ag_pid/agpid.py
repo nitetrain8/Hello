@@ -494,7 +494,8 @@ class PIDRunner(Logger):
         Override of Logger.close(), to ensure that the python wrappers
         around the COM objects used to communicate with excel are DECREF'd,
         and hopefully closed. COM is clunky to use to access Excel across multiple
-        instances.
+        instances, and so it is important to ensure that the python wrappers are
+        garbage collected properly in order to allow COM to free open resources.
 
         This function also implemented pickle preservation prior to PLogger class.
         """
@@ -504,8 +505,8 @@ class PIDRunner(Logger):
 
         if self._xl is not None:
             self._xl.Visible = True
-            self._xl = None
 
+        self._xl = None
         self._wb = None
         self._ws = None
         self._chart = None

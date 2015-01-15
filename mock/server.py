@@ -294,8 +294,8 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         kws = {}
         for kv in kvs:
             k, v = kv.lower().split("=")
-            if k in kws:
-                if strict:
+            if strict:
+                if k in kws:
                     raise BadQueryString("Got multiple arguments for %s" % k)
             kws[k] = v
 
@@ -427,7 +427,6 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         if self.server.state.login(val1, val2, loader, skipvalidate):
             return self.send_good_set_reply('json' if json else 'xml')
         else:
-
             raise LoginError(json)
 
     def logout_wsh(self, params, real_mode=False):
