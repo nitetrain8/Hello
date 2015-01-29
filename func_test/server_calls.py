@@ -127,7 +127,6 @@ class TestServerCalls(unittest.TestCase):
             self.logged_in = False
 
     def tearDown(self):
-        print("teardown")
         if self.app:
             self.app.close()
             self.app = None
@@ -610,6 +609,7 @@ class TestServerCalls_ip%(ip)s(TestServerCalls):
     del TestServerCalls
 else:
     TestServerCalls.ipaddy = ipaddys[0]
+
 
 if __name__ == '__main__':
     unittest.main()

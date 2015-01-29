@@ -36,7 +36,7 @@ class ServerCallError(HelloError):
 
 
 class TrueError(ServerCallError):
-    """ Server was retarded and returned "True" on a Get call.
+    """ Server was stupid and returned "True" on a Get call.
     """
 
 
@@ -316,11 +316,11 @@ class HelloApp():
         rsp = self.call_hello(query)
         xml = BatchListXML(rsp)
         if not xml.result:
-            raise ServerCallError
+            raise ServerCallError(xml.data)
         return xml
 
-    def getreport_byname(self, type, val1):
-        return self.getReport('byBatch', type, val1)
+    def getreport_byname(self, type, name):
+        return self.getReport('byBatch', type, name)
 
     def getdatareport_bybatchid(self, val1):
         fname = self.getReport('byBatch', 'Data', val1)
@@ -756,7 +756,7 @@ class BatchListXML():
     def parse_int(self, e):
         name = e[0].text
         val = e[1].text
-        val = int(val)
+        val = int(val or 0)
         return name, val
 
     def parse_string(self, e):

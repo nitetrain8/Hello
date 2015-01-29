@@ -16,6 +16,16 @@ from os.path import dirname, join, exists
 from os import makedirs
 
 
+def make_stdout_file(sock, mode, bufsize):
+    f = sock.makefile(mode, bufsize)
+    oldwrite = f.write
+    def write(s):
+        print(s)
+        oldwrite(s)
+    f.write = write
+    return f
+
+
 class MyHTTPConnection(HTTPConnection):
     def do_get_request(self, url, body=None, headers=None):
         headers = headers or {}
@@ -54,6 +64,7 @@ class MyHTTPConnection(HTTPConnection):
 
 
 class MyHTTPHandler(HelloHTTPHandler):
+    debug = False
 
     def __init__(self, request, client_address, server, to_con):
         """
@@ -106,6 +117,21 @@ class MyHTTPHandler(HelloHTTPHandler):
         with open(dummy_path, 'wb') as f:
             f.write(txt)
 
+    def setup(self):
+
+        self.connection = self.request
+        if self.timeout is not None:
+            self.connection.settimeout(self.timeout)
+        if self.disable_nagle_algorithm:
+            self.connection.setsockopt(socket.IPPROTO_TCP,
+                                       socket.TCP_NODELAY, True)
+        if self.debug:
+            self.rfile = make_stdout_file(self.connection, 'rb', self.rbufsize)
+            self.wfile = make_stdout_file(self.connection, 'wb', self.wbufsize)
+        else:
+            self.rfile = self.connection.makefile('rb', self.rbufsize)
+            self.wfile = self.connection.makefile('wb', self.wbufsize)
+
     def do_GET(self):
         rsp = self.to_con.do_get_request(self.path, None, self.headers)
         msg = rsp.read()
@@ -131,7 +157,7 @@ class MyHTTPHandler(HelloHTTPHandler):
 
 
 class MyHTTPServer(HTTPServer):
-    def __init__(self, from_addr='localhost:12345', to_addr='192.168.1.6:80'):
+    def __init__(self, from_addr='localhost:12345', to_addr='192.168.1.6:80', handler=MyHTTPHandler):
         if isinstance(from_addr, str):
             try:
                 host, port = from_addr.split(":")
@@ -139,7 +165,7 @@ class MyHTTPServer(HTTPServer):
                 from_addr = (host, port)
             except ValueError:
                 from_addr = (from_addr, 80)
-        HTTPServer.__init__(self, from_addr, MyHTTPHandler)
+        HTTPServer.__init__(self, from_addr, handler)
         self.to_addr = to_addr
         self.to_con = MyHTTPConnection(to_addr)
 
@@ -149,7 +175,41 @@ class MyHTTPServer(HTTPServer):
 
 def main():
     m = MyHTTPServer('localhost:12345', '192.168.1.82:80')
+    MyHTTPHandler.debug = True
     m.serve_forever(0.01)
+
+
+def spawn_server_thread(server):
+    import threading
+    t = threading.Thread(None, server.serve_forever)
+    t.daemon = True
+    t.start()
+    return t
+
+
+def server_with_getcall(to_addr='192.168.1.82:80'):
+    from scripts.cli_data import getcall
+
+    class HandlerWithGetcall(MyHTTPHandler):
+        def do_GET(self):
+            MyHTTPHandler.do_GET(self)
+
+            qs = self.parse_path(self.path)
+            call, params = self.parse_qs(qs)
+
+            caller.getcall_ex_notext(call, True, **params)
+            caller.getcall_ex_notext(call, False, **params)
+
+    class HandlerServer(MyHTTPServer):
+        def __init__(self):
+            MyHTTPServer.__init__(self, to_addr=to_addr, handler=HandlerWithGetcall)
+
+    server = HandlerServer()
+
+    caller = getcall.CallGetter()
+    server.caller = caller
+    return server
+
 
 if __name__ == '__main__':
     main()

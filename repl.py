@@ -218,7 +218,7 @@ def kla_overnight(app=None, exps=None, volume=2):
     except:
         raise
     else:
-        batches = app.getbatches(True)
+        batches = app.getbatches()
         reports = []
         for e in results:
             id = batches.getbatchid(e)
@@ -274,6 +274,30 @@ def kla3():
 
     # analyze_batches(files2, "KLA %dL Compiled Data" % 2)
     analyze_batches(files3, "KLA %dL Compiled Data" % 3)
+
+
+def overnight3_settings():
+    pl = [0.1 * x for x in range(1, 6)]
+    il = [0.01 * x for x in range(1, 6)]
+    dl = [0]  # no d for now
+    sps = 8, 15, 30
+    return pl, il, dl, sps
+
+
+def run_overnight3():
+    """
+    overnight pid runner for PBS 80 Mesoblast I PID tuning.
+    """
+    pl, il, dl, sps = overnight3_settings()
+    global ovn3_runner
+    ipv4 = "192.168.1.fixme"
+    ovn3_runner = SimplePIDRunner(pl, il, dl, sps, app_or_ipv4=ipv4)
+    try:
+        _runagpid(ovn3_runner)
+    except:
+        print("OMG Error")
+        import traceback
+        print(traceback.format_exc())
 
 
 
