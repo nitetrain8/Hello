@@ -99,9 +99,9 @@ class HelloApp():
     _url_template = "http://%s/webservice/interface/"
 
     def __init__(self, ipv4, headers=None):
-        self._ipv4 = ipv4
         self._urlbase = "/webservice/interface/"
 
+        self._ipv4 = ipv4
         self._host, self._port = self._parse_ipv4(ipv4)
         self._connection = self._init_connection(self._host, self._port)
 
@@ -515,6 +515,16 @@ class HelloApp():
     def __repr__(self):
         base = super().__repr__()
         return ' '.join((base, 'ipv4', self._ipv4))
+
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        del d['_connection']
+        return d
+
+    def __setstate__(self, state):
+        for k, v in state.items():
+            setattr(self, k, v)
+        self._connection = self._init_connection(self._host, self._port)
 
     __str__ = __repr__
 

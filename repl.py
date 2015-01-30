@@ -270,6 +270,7 @@ def kla3():
     import subprocess
     subprocess.call("tskill.exe excel")
     with open("C:\\.replcache\\klaall11314.pkl", 'rb') as f:
+        # noinspection PyArgumentList
         files2, files3 = pickle.load(f)
 
     # analyze_batches(files2, "KLA %dL Compiled Data" % 2)
@@ -300,6 +301,64 @@ def run_overnight3():
         print(traceback.format_exc())
 
 
+def init_pon3_sps():
+    sps = []
+    sps.extend(i for i in range(1, 10))
+    sps.reverse()
+    sps.extend(i for i in range(10, 20, 2))
+    sps.extend(i for i in range(20, 101, 5))
+    return sps
+
+
+def poll_overnight3(app=None):
+    global p
+    if app is None:
+        from hello.hello import HelloApp
+        app = HelloApp('192.168.1.4')
+    sps = init_pon3_sps()
+    p = Poller(sps, 40, 120, app)
+    p._log_name = "Pow v RPM PBS 80 Mesoblast I"
+    try:
+        _poll_overnight(p)
+    except:
+        import traceback
+        traceback.print_exc()
+    return p
+
+
+def pid_overnight_150129(app):
+    global r
+    ps = [0.1 * i for i in range(1, 7)]
+    its = [0.05 * i for i in range(1, 11)]
+    sps = 5, 10, 15, 20, 25, 30
+    try:
+        r = SimplePIDRunner(ps, its, (0,), sps, app_or_ipv4=app)
+        _runagpid(r)
+    except:
+        import traceback
+        traceback.print_exc()
+    return r
+
+
+def overnight_150129():
+    """
+    For Mesoblast 80L power curve + ag PID
+    """
+    from hello.hello import HelloApp
+    app = HelloApp('192.168.1.4')
+    rs = []
+    for fn in (poll_overnight3, pid_overnight_150129):
+        try:
+            rv = fn(app)
+            rs.append(rv)
+        finally:
+            app.login()
+            app.setag(0, 25)
+            app.setdo(1, 20, 250)
+            app.setph(1, 20, 0)
+            app.setmg(1, 10)
+            app.settemp(0, 37)
+    return rs
 
 if __name__ == '__main__':
     # from hello import HelloApp

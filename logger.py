@@ -109,7 +109,7 @@ class Logger():
         # just in case the log is really big, avoid derping
         # the whole thing into memory at once.
         with open(fpth, mode) as f:
-            self._logbuf.seek(0, 0)
+            self._logbuf.seek(0, 0)  # beginning of file
             for line in self._logbuf:
                 f.write(line)
 
@@ -152,3 +152,5 @@ class PLogger(Logger):
     def _pickle_self(self):
         fpth = self._get_pickle_name()
         safe_pickle(self, fpth)
+
+

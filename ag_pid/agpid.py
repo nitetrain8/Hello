@@ -262,6 +262,9 @@ class PIDRunner(Logger):
                 raise ValueError("wrong # of elements" + repr(combo))
             self._combos.append(combo)
 
+        if not self._combos:
+            raise ValueError("Must have Combos to run")
+
         # Misc
         self._wb_name = None
         self._full_xl_name = None
@@ -591,17 +594,17 @@ class SimplePIDRunner(PIDRunner):
 
         from numbers import Number
 
-        def to_iter(ob):
-            if ob is None:
-                return ()
+        def to_iter(ob, ifempty=()):
+            if not ob:
+                return ifempty
             elif isinstance(ob, (int, float, str, Number)):
                 return ob,
             else:
                 return ob
 
-        p = to_iter(p)
-        i = to_iter(i)
-        d = to_iter(d)
-        sp = to_iter(sp)
+        p = to_iter(p, (1,))
+        i = to_iter(i, (0,))
+        d = to_iter(d, (0,))
+        sp = to_iter(sp, (1,))
         super().__init__(pgains=p, itimes=i, dtimes=d, sps=sp,
                          othercombos=othercombos, wb_name=wb_name, app_or_ipv4=app_or_ipv4)
