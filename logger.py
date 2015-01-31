@@ -45,6 +45,9 @@ class Logger():
         self._logbuf = StringIO()
         self._closed = False
 
+    def set_logname(self, name):
+        self._log_name = name
+
     def set_save_date_format(self, fmt):
         self._savedateformat = fmt
 
@@ -152,5 +155,28 @@ class PLogger(Logger):
     def _pickle_self(self):
         fpth = self._get_pickle_name()
         safe_pickle(self, fpth)
+
+
+import logging
+
+
+class BuiltinLogger(logging.Logger):
+    _docroot = "C:\\.replcache\\log\\"
+
+    def __init__(self, name, level=logging.DEBUG, path=_docroot):
+        logging.Logger.__init__(self, name, level)
+
+        import sys
+        import os
+
+        h1 = logging.StreamHandler(sys.stderr)
+        h2 = logging.FileHandler(os.path.join(path, name + ".log"))
+        f = logging.Formatter("%(asctime)s %(levelname)s %(name)s <%(funcName)s>- %(message)s",
+                              logging.Formatter.default_time_format)
+
+        for h in (h1, h2):
+            self.addHandler(h)
+            h.setLevel(logging.DEBUG)
+            h.setFormatter(f)
 
 

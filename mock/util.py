@@ -80,16 +80,15 @@ def _simple_xml_dump_inner_unicode(b, elem):
     @param elem: Element
     @type elem: Element
     """
-
+    txt = elem.text
     # short empty elements path
-    if not len(elem) and not elem.text:
+    if not len(elem) and not txt:
         b.write(''.join(("<", elem.tag, "/>", elem.tail or '')))
         return
 
     tag = elem.tag
     b.write(tag.join(("<", ">")))
 
-    txt = elem.text
     if txt:
         b.write(txt)
 

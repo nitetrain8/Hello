@@ -80,7 +80,7 @@ class Poller(BasePoller):
         self._app = None
         self._results = []
 
-    def poll(self):
+    def poll(self, interval=1):
 
         self._init_app()
 
@@ -88,7 +88,7 @@ class Poller(BasePoller):
             self._log("Testing sp: %s %% power" % str(sp))
 
             try:
-                ave, pvs = self._test_sp(sp, self._ramp_time, self._poll_time, 1)
+                ave, pvs = self._test_sp(sp, self._ramp_time, self._poll_time, interval)
             except:
                 self._log_err("Error occurred running test")
             else:

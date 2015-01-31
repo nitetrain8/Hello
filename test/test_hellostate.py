@@ -107,18 +107,17 @@ class TestState(unittest.TestCase):
         expected = {
             "result": "True",
             "message": {
-                'Agitation': {
+                'agitation': {
                     'error': 1,
-                    'interlocked': 2,
+                    # 'interlocked': 2,
                     'man': 3,
                     'mode': 4,
                     'pv': 5,
                     'sp': 6,
                 },
 
-                'DO': {
+                'do': {
                     'error': 7,
-                    'interlocked': 8,
                     'manDown': 9,
                     'manUp': 10,
                     'mode': 11,
@@ -126,32 +125,30 @@ class TestState(unittest.TestCase):
                     'sp': 13,
                 },
 
-                'Condenser': {
+                'condenser': {
                     'error': 14,
                     'mode': 15,
                     'pv': 16,
 
                 },
 
-                'Level': {
+                'level': {
                     'error': 18,
                     'mode': 19,
                     'pv': 20,
 
                 },
 
-                'MainGas': {
+                'maingas': {
                     'error': 22,
                     'interlocked': 23,
                     'man': 24,
                     'mode': 25,
                     'pv': 26,
-                    'sp': 27,
                 },
 
-                'pH': {
+                'ph': {
                     'error': 28,
-                    'interlocked': 29,
                     'manDown': 30,
                     'manUp': 31,
                     'mode': 32,
@@ -159,13 +156,13 @@ class TestState(unittest.TestCase):
                     'sp': 34,
                 },
 
-                'Pressure': {
+                'pressure': {
                     'error': 35,
                     'mode': 36,
                     'pv': 37,
                 },
 
-                'SecondaryHeat': {
+                'secondaryheat': {
                     'error': 39,
                     'interlocked': 40,
                     'man': 41,
@@ -174,7 +171,7 @@ class TestState(unittest.TestCase):
                     'sp': 44,
                 },
 
-                'Temperature': {
+                'temperature': {
                     'error': 45,
                     'interlocked': 46,
                     'man': 47,
@@ -207,7 +204,7 @@ class TestState(unittest.TestCase):
                 eval = emsg[ekey]
                 aval = amsg[ekey]
                 for ekey2 in eval:
-                    self.assertIn(ekey2, aval)
+                    self.assertIn(ekey2, aval, ekey)
                     eval2 = eval[ekey2]
                     aval2 = aval[ekey2]
                     self.assertEqual(eval2, aval2, " ".join((ekey, ekey2)))
@@ -391,7 +388,7 @@ class TestStateMainInfo(unittest.TestCase):
 </String>
 <String>
 <Name>manName</Name>
-<Val>Power</Val>
+<Val>Percent Power</Val>
 </String>
 </Cluster>""".replace("\n", "")
 
@@ -633,9 +630,10 @@ class TestXMLUtilities(unittest.TestCase):
             ('test2', 'Bar'),
             ('test3', 'Baz')
         ]
-        actual_txt = obj_to_xml(obj)
+        actual_txt = obj_to_xml(obj, "test4")
 
-        expected = b"""<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message>
+        expected = b"""<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message><Cluster>
+<Name>test4</Name>
 <NumElts>3</NumElts>
 <String>
 <Name>test1</Name>
@@ -649,15 +647,15 @@ class TestXMLUtilities(unittest.TestCase):
 <Name>test3</Name>
 <Val>Baz</Val>
 </String>
-</Message></Reply>"""
+</Cluster></Message></Reply>"""
 
-        exp_no_newline = expected.replace(b"\n", b"")
-        actual_no_newline = actual_txt.replace(b"\n", b"")
+        # exp_no_newline = expected.replace(b"\n", b"")
+        # actual_no_newline = actual_txt.replace(b"\n", b"")
+        # self.assertEqual(exp_no_newline, actual_no_newline)
 
         # print(exp_no_newline)
         # print(actual_no_newline)
-
-        self.assertEqual(exp_no_newline, actual_no_newline)
+        print(actual_txt)
         try:
             self.assertEqual(expected, actual_txt)
         except self.failureException:

@@ -90,8 +90,7 @@ class TestXMLParse(unittest.TestCase):
             xml = f.read()
 
         p = HelloXML(xml).getdata()
-
-        print(p['Agitation'])
+        self.fail()
 
 
 if __name__ == '__main__':

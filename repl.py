@@ -4,7 +4,7 @@ from hello.ag_pid.agpid import SimplePIDRunner
 from hello.ag_pid.poll import Poller
 
 
-def _poll_overnight(p):
+def run_poll(p):
     # Poll
     p.poll()
     p.toxl()
@@ -20,7 +20,7 @@ def poll_overnight_2x200ohm_resistor():
     )[::-1]
     p = po100r = Poller(sps)
 
-    _poll_overnight(p)
+    run_poll(p)
 
     return p
 
@@ -62,7 +62,7 @@ def run_overnight2():
     assert r in gv
     assert r2 in gv
 
-    _poll_overnight(p)
+    run_poll(p)
     _runagpid(r)
     _runagpid(r2)
     return p, r, r2
@@ -78,7 +78,7 @@ def test_really_fast():
     p = Poller(sps, 40, 120)
     p._log_name = "Pow v RPM resist before cap"
     try:
-        _poll_overnight(p)
+        run_poll(p)
     except:
         import traceback
         traceback.print_exc()
@@ -94,7 +94,7 @@ def test_really_fast2():
     p2._results = p._results.copy()
 
     try:
-        _poll_overnight(p2)
+        run_poll(p2)
     except:
         import traceback
         traceback.print_exc()
@@ -310,16 +310,17 @@ def init_pon3_sps():
     return sps
 
 
-def poll_overnight3(app=None):
+def PBS_80_Mesoblast_I_poll1(app=None):
+    """ For PBS 80 Mesoblast I """
     global p
     if app is None:
         from hello.hello import HelloApp
         app = HelloApp('192.168.1.4')
     sps = init_pon3_sps()
     p = Poller(sps, 40, 120, app)
-    p._log_name = "Pow v RPM PBS 80 Mesoblast I"
+    p.set_logname("Pow v RPM PBS 80 Mesoblast I")
     try:
-        _poll_overnight(p)
+        run_poll(p)
     except:
         import traceback
         traceback.print_exc()
@@ -327,6 +328,7 @@ def poll_overnight3(app=None):
 
 
 def pid_overnight_150129(app):
+    """ For PBS 80 Mesoblast I """
     global r
     ps = [0.1 * i for i in range(1, 7)]
     its = [0.05 * i for i in range(1, 11)]
@@ -347,7 +349,7 @@ def overnight_150129():
     from hello.hello import HelloApp
     app = HelloApp('192.168.1.4')
     rs = []
-    for fn in (poll_overnight3, pid_overnight_150129):
+    for fn in (PBS_80_Mesoblast_I_poll1, pid_overnight_150129):
         try:
             rv = fn(app)
             rs.append(rv)
@@ -359,6 +361,70 @@ def overnight_150129():
             app.setmg(1, 10)
             app.settemp(0, 37)
     return rs
+
+
+def init_pon3_sps2():
+    sps = []
+    sps.extend(i for i in range(10, 20, 10))
+    sps.extend(i for i in range(20, 101, 10))
+    return sps
+
+
+def PBS_80_Mesoblast_I_poll2(app=None):
+    """ For PBS 80 Mesoblast I """
+    global p
+    if app is None:
+        from hello.hello import HelloApp
+        app = HelloApp('192.168.1.4')
+    sps = init_pon3_sps2()
+    p = Poller(sps, 20, 20, app)
+    p.set_logname("Pow v RPM PBS 80 Mesoblast I")
+    try:
+        run_poll(p)
+    except:
+        import traceback
+        traceback.print_exc()
+    return p
+
+
+def really_fast_test_new_wheel_endcaps(ipv4='192.168.1.4'):
+    """
+    For Mesoblast 80L power curve + ag PID
+    """
+    from hello.hello import HelloApp
+    app = HelloApp(ipv4)
+
+    try:
+        rv = PBS_80_Mesoblast_I_poll2(app)
+    finally:
+        app.login()
+        app.setag(0, 25)
+        app.setdo(1, 20, 250)
+        app.setph(1, 20, 0)
+        app.setmg(1, 10)
+        app.settemp(0, 37)
+    return rv
+
+
+def over_weekend_150130(ipv4='192.168.1.4'):
+    from hello.hello import HelloApp
+    from hello.temp_pid.temppid import Runner
+
+    ps = (30, 40, 50)
+    its = 10, 15, 20
+    ds = 0,
+    sps = 37,
+
+    app = HelloApp(ipv4)
+    runner = Runner(ps, its, ds, sps, app)
+    try:
+        runner.runall()
+        runner.plotall()
+    finally:
+        app.setag(0, 28)
+        app.settemp(0, 37)
+
+
 
 if __name__ == '__main__':
     # from hello import HelloApp
