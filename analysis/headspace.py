@@ -297,6 +297,16 @@ def run_150129():
     print("Beginning Analysis...", flush=True)
     hda.main()
 
+
+def run_150202():
+    batches = ["headspacetest00%d" % i for i in range(1, 6)]
+    killxl()
+    for batch in batches:
+        print("Downloading file %s..." % batch, flush=True)
+        hda = HeadspaceDataAnalyzer.from_download(batch, "192.168.1.4")
+        print("Beginning Analysis...", flush=True)
+        hda.main()
+
 if __name__ == '__main__':
     from datetime import datetime
     import sys
