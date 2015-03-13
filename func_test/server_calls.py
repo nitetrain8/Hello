@@ -171,7 +171,6 @@ class TestServerCalls(unittest.TestCase):
         self.assertTrue(msg, 'True')
 
     def login(self, force=False):
-
         if not self.logged_in or force:
             self.app.login()
             self.logged_in = True

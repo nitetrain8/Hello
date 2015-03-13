@@ -53,7 +53,7 @@ class TorqueAnalyzer():
             contents = f.read()
         self.logger.debug("Successfully read file, parsing...")
         contents = [line.split("\t") for line in contents.splitlines()]
-        self._add_file(size, wt, contents)
+        self._add_data_set(size, wt, contents)
 
     @classmethod
     def from_dir(cls, path):
@@ -65,18 +65,18 @@ class TorqueAnalyzer():
 
         return self
 
-    def _register_test(self, size, t, wt):
-        self.logger.debug("Registering test: size %s, wt %s" % (size, wt))
-        if size not in self.sizes:
-            self.sizes[size] = {}
-        if wt not in self.weights:
-            self.weights[wt] = {}
+    def _register_test(self, t):
+        self.logger.debug("Registering test: size %s, wt %s" % (t.size, t.wt))
+        if t.size not in self.sizes:
+            self.sizes[t.size] = {}
+        if t.wt not in self.weights:
+            self.weights[t.wt] = {}
 
-        self.sizes[size][t.name] = t
-        self.weights[wt][t.name] = t
+        self.sizes[t.size][t.name] = t
+        self.weights[t.wt][t.name] = t
         self.tests.append(t)
 
-    def _add_file(self, size, wt, contents):
+    def _add_data_set(self, size, wt, contents):
         self.logger.debug("Inner add file: %s %s" % (size, wt))
         cells = self.cells
         header = [(size, "%s %s" % (size, wt), wt)]
@@ -94,12 +94,13 @@ class TorqueAnalyzer():
         cells.Range(cells(self.DATA_ROW, self.column), cells(endrow, self.column + 1)).Value = contents
 
         t = TorqueTest(size, wt, self.column, self.DATA_ROW, endrow)
-        self._register_test(size, t, wt)
+        self._register_test(t)
 
         self.column += 4
 
     def plot_by_size(self):
         # todo debug logging
+        # todo add trendlines
         self.logger.info("Plotting by Size")
         for size, tests in self.sizes.items():
             chart = xlcom.CreateChart(self.ws)
@@ -112,6 +113,7 @@ class TorqueAnalyzer():
 
     def plot_by_weight(self):
         # todo debug logging
+        # todo add trendlines
         self.logger.info("Plotting by Weight")
         for wt, tests in self.weights.items():
             chart = xlcom.CreateChart(self.ws)
