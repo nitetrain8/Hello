@@ -38,7 +38,7 @@ def xml_parse_call(txt):
 def sendroutine(f):
     from functools import wraps
 
-    @wraps
+    @wraps(f)
     def wrapper(*args, **kwargs):
         g = f(*args, **kwargs)
         next(g)
@@ -67,45 +67,53 @@ class Hello():
         self.mvbad = 0
         self.avbad = 0
         self.main_values = OrderedDict(
-            (("Agitation", OrderedDict(
-                    (("pv", 0),
-                    ("sp", 0),
-                    ("man", 0),
-                    ("mode", 0),
-                    ("error", 0),
-                    ("interlocked", 0))
+            (("agitation", OrderedDict(
+                    (
+                        ("pv", 0),
+                        ("sp", 0),
+                        ("man", 0),
+                        ("mode", 0),
+                        ("interlocked", 0),
+                        ("error", 0)
+                    )
                 ),
             ),
-             ("Temperature", OrderedDict(
-                   (("pv", 0),
-                    ("sp", 0),
-                    ("man", 0),
-                    ("mode", 0),
-                    ("error", 0),
-                    ("interlocked", 0))
+             ("temperature", OrderedDict(
+                   (
+                        ("pv", 0),
+                        ("sp", 0),
+                        ("man", 0),
+                        ("mode", 0),
+                        ("interlocked", 0),
+                        ("error", 0)
+                    )
                  ),
              ),
-
-            ("MainGas", OrderedDict(
-                    (("pv", 0),
-                    ("sp", 0),
-                    ("man", 0),
-                    ("mode", 0),
-                    ("error", 0),
-                    ("interlocked", 0))
+             
+             ("secondaryheat", OrderedDict(
+                    (
+                        ("pv", 0),
+                        ("sp", 0),
+                        ("man", 0),
+                        ("mode", 0),
+                        ("interlocked", 0),
+                        ("error", 0)
+                    )
                 ),
             ),
 
-            ("SecondaryHeat", OrderedDict(
-                    (("pv", 0),
-                    ("sp", 0),
-                    ("man", 0),
-                    ("mode", 0),
-                    ("error", 0),
-                    ("interlocked", 0))
-                 ),
+            ("maingas", OrderedDict(
+                    (
+                        ("pv", 0),
+                        ("sp", 0),
+                        ("man", 0),
+                        ("mode", 0),
+                        ("interlocked", 0),
+                        ("error", 0)
+                    )
+                ),
             ),
-            ("DO", OrderedDict(
+            ("do", OrderedDict(
                     (("pv", 0),
                     ("sp", 0),
                     ("manUp", 0),
@@ -114,7 +122,7 @@ class Hello():
                     ("error", 0))
                 ),
             ),
-            ("pH", OrderedDict(
+            ("ph", OrderedDict(
                     (("pv", 0),
                     ("sp", 0),
                     ("manUp", 0),
@@ -123,19 +131,19 @@ class Hello():
                     ("error", 0))
                 ),
             ),
-            ("Pressure", OrderedDict(
+            ("pressure", OrderedDict(
                     (("pv", 0),
                     ("mode", 0),
                     ("error", 0))
                 ),
             ),
-            ("Level", OrderedDict(
+            ("level", OrderedDict(
                     (("pv", 0),
                     ("mode", 0),
                     ("error", 0))
                 ),
             ),
-            ("Condenser", OrderedDict(
+            ("condenser", OrderedDict(
                     (("pv", 0),
                     ("mode", 0),
                     ("error", 0))
@@ -164,10 +172,13 @@ class Hello():
             ("User SH Duty A", 0),
             ("SH Setpoint A", 0))
         )
+        
+        self.unack_count = 0
 
         self.mv_cont = mvc = {}
         self.av_cont = avc = {}
 
+        # obsfucated deep copy
         for k1, v1 in self.main_values.items():
             mvc[k1] = mvcv1 = {}
             for k2, v2 in v1.items():
@@ -176,14 +187,26 @@ class Hello():
         for k, v in self.adv_values.items():
             avc[k] = v
 
-        self.main_values.move_to_end("SecondaryHeat")
+        self.main_values.move_to_end("secondaryheat")
         self.adv_values.move_to_end("SH Duty", False)
+
+        from hello import HelloApp
+        self.app = HelloApp(ipv4)
 
     def getMainValues(self):
         return self.get_mainvalues()
 
     def getAdvancedValues(self):
         return self.get_advvalues()
+        
+    def getUnAckCount(self):
+        try:
+            rv = self.unackqueue.get(False)
+        except Empty:
+            rv = None
+        else:
+            self.unackqueue.task_done()
+        return rv
 
     def setup(self):
         from tkinter import Tk, N, StringVar
@@ -192,31 +215,31 @@ class Hello():
         root = Tk()
         mframe_label = StringVar(value="Loading...")
         mframe = LabelFrame(root, text="Loading...")
-        gframes = OrderedDict()
+        group_frames = OrderedDict()
         labels = OrderedDict()
-        vars = OrderedDict()
+        views = OrderedDict()
 
-        for group, params in self.main_values.items():
-            gframe = LabelFrame(mframe, text=group)
-            gframes[group] = gframe
-            glabels = OrderedDict()
-            gvars = OrderedDict()
-            for k, v in params.items():
+        for cntlr, cntlr_vals in self.main_values.items():
+            gframe = LabelFrame(mframe, text=cntlr)
+            group_frames[cntlr] = gframe
+            group_labels = OrderedDict()
+            group_vars = OrderedDict()
+            for k, v in cntlr_vals.items():
                 name_var = StringVar(value=k)
                 val_var = StringVar(value=v)
                 name_label = Label(gframe, textvariable=name_var)
                 val_label = Label(gframe, textvariable=val_var)
-                glabels[k] = [name_label, val_label]
-                gvars[k] = [name_var, val_var]
-            labels[group] = glabels
-            vars[group] = gvars
+                group_labels[k] = [name_label, val_label]
+                group_vars[k] = [name_var, val_var]
+            labels[cntlr] = group_labels
+            views[cntlr] = group_vars
 
         avframe = LabelFrame(mframe, text="Advanced Values")
-        gframes['Advanced Values'] = avframe
+        group_frames['Advanced Values'] = avframe
         avlabels = OrderedDict()
         labels['Adv'] = avlabels
         avvars = OrderedDict()
-        vars['Adv'] = avvars
+        views['Adv'] = avvars
 
         for k, v in self.adv_values.items():
             name_var = StringVar(value=k)
@@ -226,10 +249,10 @@ class Hello():
             avlabels[k] = [name_label, val_label]
             avvars[k] = [name_var, val_var]
 
-        for i, frame in enumerate(gframes.values()):
+        for i, frame in enumerate(group_frames.values()):
             frame.grid(sticky=N, column=i, row=0)
-        for group in labels.values():
-            for label in group.values():
+        for cntlr in labels.values():
+            for label in cntlr.values():
                 label[0].grid()
                 label[1].grid()
         mframe.grid()
@@ -237,33 +260,61 @@ class Hello():
         self.mframe = mframe
         self.root = root
         self.mframe_label = mframe_label
-        self.gframes = gframes
+        self.gframes = group_frames
         self.labels = labels
-        self.vars = vars
+        self.vars = views
 
         # Initialize threading model for polling updates
         # From server
         self.mvqueue = Queue(1)
         self.avqueue = Queue(1)
+        self.unackqueue = Queue(1)
 
         self.mv_stop = threading.Event()
         self.av_stop = threading.Event()
+        self.unack_stop = threading.Event()
+
+        poll_lock = threading.Lock()
 
         self.mvthread = threading.Thread(None, self.do_mainvalues, None,
-                                         (self.mvqueue, self.url_base, self.mv_stop))
+                                         (self.mvqueue, self.app, self.mv_stop, poll_lock))
         self.avthread = threading.Thread(None, self.do_advvalues, None,
-                                         (self.avqueue, self.url_base, self.av_stop))
+                                         (self.avqueue, self.app, self.av_stop, poll_lock))
+        self.unackthread = threading.Thread(None, self.do_unackcount, None, 
+                                         (self.unackqueue, self.app, self.unack_stop, poll_lock))
 
         self.mvthread.daemon = True
         self.avthread.daemon = True
+        self.unackthread.daemon = True
 
         self.mvthread.start()
         self.avthread.start()
+        self.unackthread.start()
 
     def mainloop(self):
         self.setup()
         self.root.after(250, self.poll)
-        self.root.mainloop()
+        try:
+            self.root.mainloop()
+        finally:
+            # clean up threads
+            
+            # set stop flags
+            self.mv_stop.set()
+            self.av_stop.set()
+            self.unack_stop.set()
+            
+            # empty queue to ensure threads aren't blocked
+            for q in (self.mvqueue, self.avqueue, self.unackqueue):
+                try:
+                    q.get(False)
+                except Empty:
+                    pass
+                else:
+                    q.task_done()
+            for t in (self.mvthread, self.avthread, self.unackthread):
+                t.join()
+            
 
     def poll(self):
 
@@ -295,11 +346,37 @@ class Hello():
             print("Error updating Advanced Values")
             print_exc()
             self.avbad += 1
+            
+        try:
+            unack_count = self.getUnAckCount()
+            if unack_count is not None:
+                self.unack_count = unack_count
+        except Exception:
+            print("Error getting unackcount")
+            print_exc()
 
         self.root.after(250, self.update, update)
         self.root.after(500, self.poll)
+        
+    def do_unackcount(self, q, app, running_flag, lock):
+        stopped = running_flag.is_set
 
-    def do_mainvalues(self, q, urlbase, running_flag):
+        while not stopped():
+            q.join()
+            try:
+                with lock:
+                    value = app.getUnAckCount()
+                q.put(value)
+            except (OSError, URLError):  # socket errors
+                pass
+            except Exception as e:
+                print("==========================")
+                print("Error in UNACK thread")
+                print_exc()
+                print("==========================")
+                q.put(False)
+
+    def do_mainvalues(self, q, app, running_flag, lock):
         """
         @type q: Queue
         @return:
@@ -309,11 +386,10 @@ class Hello():
         while not stopped():
             q.join()
             try:
-                values = getMainValues(urlbase)
+                with lock:
+                    values = app.getMainValues()
                 q.put(values)
             except (OSError, URLError):  # socket errors
-                pass
-            except (OSError, URLError):
                 pass
             except Exception as e:
                 print("==========================")
@@ -330,7 +406,7 @@ class Hello():
             self.mvqueue.task_done()
         return rv
 
-    def do_advvalues(self, q, urlbase, running_flag):
+    def do_advvalues(self, q, app, running_flag, lock):
         """
         @type q: Queue
         @return:
@@ -339,7 +415,8 @@ class Hello():
         while not stopped():
             q.join()
             try:
-                values = getAdvancedValues(urlbase)
+                with lock:
+                    values = app.getAdvancedValues()
                 q.put(values)
             except (OSError, URLError):
                 pass
@@ -378,39 +455,51 @@ class Hello():
                     avc[k] = v
                     avvars[k][1].set(v)
 
-        self.mframe.configure(text="MV: %d-%d, AV: %d-%d" % (self.mvhb,
-                                                             self.mvbad,
-                                                             self.avhb,
-                                                             self.avbad))
+        self.mframe.configure(text="MV: %d-%d, AV: %d-%d Alarms: %d" % (self.mvhb,
+                                                                         self.mvbad,
+                                                                         self.avhb,
+                                                                         self.avbad,
+                                                                         self.unack_count)
+                            )
 
-    def parse_adv_values2(self, root):
-        cluster = root[1][0]
-        cluster = iter(cluster)
-        next(cluster)
-        next(cluster)
-        adv = self.adv_values
-        for elem in cluster:
-            # print(elem)
-            name = elem[0].text
-            val = elem[1].text
-            adv[name] = val
+    def parse_adv_values2(self, dct):
+        self.adv_values.update(dct)
+        # cluster = root[1][0]
+        # cluster = iter(cluster)
+        # next(cluster)
+        # next(cluster)
+        # adv = self.adv_values
+        # for elem in cluster:
+        #     # print(elem)
+        #     name = elem[0].text
+        #     val = elem[1].text
+        #     adv[name] = val
 
-    def parse_main_values2(self, root):
-        _next = next
-        _iter = iter
+    def parse_main_values2(self, dct):
+        # _next = next
+        # _iter = iter
+        #
+        # cluster1 = root[1][0]
+        # citer = _iter(cluster1)
+        # _next(citer)
+        # _next(citer)
+        #
+        # for group in citer:
+        #     giter = _iter(group)
+        #     gname = _next(giter).text
+        #     _next(giter)
+        #     vals = self.main_values[gname]
+        #     for var in giter:
+        #         vals[var[0].text] = var[1].text
 
-        cluster1 = root[1][0]
-        citer = _iter(cluster1)
-        _next(citer)
-        _next(citer)
+        # unsure if dct.update() works recursively (deep copy). Probably not.
+        for group_name, group_dct in dct.items():
+            self.main_values[group_name].update(group_dct)
 
-        for group in citer:
-            giter = _iter(group)
-            gname = _next(giter).text
-            _next(giter)
-            vals = self.main_values[gname]
-            for var in giter:
-                vals[var[0].text] = var[1].text
+            
+def main(ipv4):
+    h = Hello(ipv4)
+    h.mainloop()
 
 if __name__ == '__main__':
     # xml_parse_call = lambda x: x
@@ -425,7 +514,6 @@ if __name__ == '__main__':
         else:
             print(elem, elem.text)
 
-    ipv4 = '192.168.1.4'
-    h = Hello(ipv4)
-    h.mainloop()
-    print(h.mvqueue.unfinished_tasks)
+    ipv4 = '192.168.1.16'
+    main(ipv4)
+

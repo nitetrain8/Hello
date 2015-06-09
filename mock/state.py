@@ -36,7 +36,7 @@ def sin_wave(amplitude, period, middle=0, offset=0, gen=None, trigfunc=None):
     start = gen()
     while True:
         t = gen() - start
-        result = amplitude * trigfunc((t % period) * pi_over_180 + offset) + middle
+        result = amplitude * trigfunc((t / period) * pi_over_180 + offset) + middle
         yield t, result
 
 
@@ -454,7 +454,8 @@ class HelloState():
 
         self._login_info = {
             'user1': '12345',
-            'pbstech': '727246'
+            'pbstech': '727246',
+            'webuser1': '1'
         }
         self._logged_in = False
         self._last_login = 0
@@ -483,6 +484,8 @@ class HelloState():
         # I don't know why, but the server reply for the
         # real hello webserver returns main value controllers
         # in a different order if xml vs json is requested.
+        # 4-15-15: XML is created via dump to string, JSON by format
+        # existing string template.
 
         message = [(c.name, c.mv_toxml()) for c in self._mv_controller_array if c.name != 'SecondaryHeat']
         message.append((self.secondaryheat.name, self.secondaryheat.mv_toxml()))
@@ -495,8 +498,8 @@ class HelloState():
             return self.xml_gen.tree_to_xml(self.get_xml_main_values(), 'windows-1252')
 
     def login(self, val1, val2, loader, skipvalidate):
-        user = val1
-        pwd = val2
+        user = val1  # clarity
+        pwd = val2  # clarity
         missing = object()
         if self._login_info.get(user.lower(), missing) == pwd:
             self._logged_in = True

@@ -38,13 +38,38 @@ def tearDownModule():
         pass
 
 
-from hello.hello import HelloApp
+from hello.hello import HelloApp, HelloXML, BatchListXML
+import pickle
+
+
+global_ipv4 = "localhost:12345"
+
+
+class DummyRsp():
+    """
+    HelloXML only supports string objects & those with
+    "read" methods.
+    """
+
+    def __init__(self, txt):
+        self.txt = txt
+
+    def read(self, n):
+        if not self.txt:
+            return b''
+        if n > len(self.txt):
+            rv = self.txt
+            self.txt = b""
+        else:
+            rv = self.txt[:n]
+            self.txt = self.txt[n:]
+        return rv
 
 
 class TestPickle(unittest.TestCase):
 
     def setUp(self):
-        self.app = HelloApp('192.168.1.4')
+        self.app = HelloApp(global_ipv4)
 
     def tearDown(self):
         self.app.close()
@@ -54,11 +79,42 @@ class TestPickle(unittest.TestCase):
         @return: None
         @rtype: None
         """
-        import pickle
+
         try:
             pickle.dumps(self.app)
         except pickle.PickleError as e:
             self.fail(str(e))
+
+
+class TestHelloXML(unittest.TestCase):
+
+    def setUp(self):
+        self.app = HelloApp(global_ipv4)
+
+    def tearDown(self):
+        self.app.close()
+
+    def test_getconfig(self):
+
+        fp = join(test_input, "good_getconfig.pkl")
+
+        with open(fp, 'rb') as f:
+            raw, exp_dict = pickle.load(f)
+
+        res_dict = HelloXML(DummyRsp(raw)).data
+
+        self.assertEqual(exp_dict, res_dict)
+
+    def _generate_test_getconfig_data_(self):
+
+        fp = join(test_input, "good_getconfig.pkl")
+        raw = self.app.call_hello("?&call=getConfig").read()
+
+        data = HelloXML(DummyRsp(raw)).data
+
+        with open(fp, 'wb') as f:
+            pickle.dump((raw, data), f)
+
 
 
 if __name__ == '__main__':

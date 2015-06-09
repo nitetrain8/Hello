@@ -9,17 +9,18 @@ Created in: PyCharm Community Edition
 __author__ = 'Nathan Starkweather'
 
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from hello.mock.util import simple_xml_dump
+from hello.mock.util import simple_xml_dump, lineno
 from hello.mock.state import HelloState
 from xml.etree.ElementTree import Element, SubElement, tostring as xml_tostring
 from json import dumps as json_dumps
+from os.path import join as path_join, exists as path_exists
 import traceback
 import sys
 
 
 def _stack_trace():
     rv = traceback.format_list(traceback.extract_stack())
-    return rv
+    return '\n'.join(rv)
 
 # custom error codes
 E_UNKN_WTF = -1
@@ -45,8 +46,9 @@ class HelloServerException(Exception):
         """
         reply = """{
 "result": "%s",
-"message": "%s"
-}""" % (self.result, self.message.replace("\"", "\\\""))
+"message": "%s,
+"line: %d"
+}""" % (self.result, self.message.replace("\"", "\\\""), lineno(2))
         return reply.encode(encoding)
 
     def xml_reply(self, encoding='UTF-8'):
@@ -55,6 +57,8 @@ class HelloServerException(Exception):
         result.text = self.result
         message = SubElement(reply, "Message")
         message.text = self.message
+        line_number_e = SubElement(reply, "LineNo")
+        line_number_e.text = str(lineno(2))
 
         # for some reason, "True" replies encode in windows-1252,
         # but "False" replies (or at least some) encode in UTF-8 (???)
@@ -215,6 +219,12 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
     allow_json = False
 
+    hello_folder = "C:\\Users\\Public\\Documents\\PBSSS\\SW test"
+
+    # enums for parsing path
+    GET_QS = 0
+    GET_PATH = 1
+
     def parse_path(self, path):
         """
 
@@ -225,12 +235,25 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         @return: query string
         """
         try:
-            _, webservice, interface, qs = path.split("/", 3)
+            _, first, second, qs = path.split("/", 3)
         except ValueError:
+            # Maybe we have a normal path?
+            return self.parse_path_as_path(path)
+
+        # normal path that didn't trip above error block
+        if first != "webservice" or second != "interface":
+            return self.parse_path_as_path(path)
+        return self.GET_QS, qs
+
+    def parse_path_as_path(self, path):
+
+        path = path.strip("/").replace("/", "\\")
+
+        pth = path_join(self.hello_folder, path)
+        if path_exists(pth):
+            return self.GET_PATH, pth
+        else:
             raise BadPath(path)
-        if webservice != "webservice" or interface != "interface":
-            raise BadPath(path)
-        return qs
 
     def do_GET(self):
 
@@ -245,29 +268,43 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         """
 
         try:
-            qs = self.parse_path(self.path)
-            call, params = self.parse_qs(qs, not self.real_mode)
+            code, path = self.parse_path(self.path)
+            if code == self.GET_QS:
+                call, params = self.parse_qs(path, not self.real_mode)
 
-            # A suffix is appended to the name of methods is important
-            # to ensure that a malicious 3rd party can't access arbitrary
-            # functions on the handler class by passing in names of known
-            # private handler methods.
-            # A proper fix would be using an explicit mapping to handle
-            # dispatches. That can be on the todo list if/when hellohttphandler
-            # and helloserver are merged into a single webserver class
+                # A suffix is appended to the name of methods is important
+                # to ensure that a malicious 3rd party can't access arbitrary
+                # functions on the handler class by passing in names of known
+                # private handler methods.
+                # A proper fix would be using an explicit mapping to handle
+                # dispatches. That can be on the todo list if/when hellohttphandler
+                # and helloserver are merged into a single webserver class
 
-            method_name = call + "_wsh"
+                method_name = call + "_wsh"
 
-            handler = getattr(self, method_name, None)
-            if handler is None:
-                raise UnrecognizedCommand(call, 'xml')
-            handler(params, self.real_mode)
+                # Enable this line to enable output of calls to filesystem
+                # (see self.send_reply)
+                # self.current_method_name = method_name
+
+                handler = getattr(self, method_name, None)
+                if handler is None:
+                    raise UnrecognizedCommand(call, 'xml')
+                handler(params, self.real_mode)
+                return
+            elif code == self.GET_PATH:
+                self.send_file_reply(path)
+                return
+
+            raise UnknownInternalError("Don't know how to handle request: " + self.path)
+
         except BadQueryString as e:
             self.send_error(400, "Bad query string: \"%s\"" % e.string)
         except ArgumentError as e:
             self.send_reply(e.reply, e.rsp_fmt)
+            print("ArgumentError: %s" % e.reply, file=sys.stderr)
         except UnrecognizedCommand as e:
             self.send_reply(e.reply, e.rsp_fmt)
+            print("GOT UNRECOGNIZED COMMAND: %s" % e.reply, file=sys.stderr)
         except BadPath as e:
             self.send_error(400, "Bad path, (%s) use webservice/interface" % e.args[0])
         except Exception:
@@ -288,8 +325,6 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         kvs = qs.split("&")
 
         assert kvs[0] not in {"/", "/?"}
-        # if kvs[0] in {"/", "/?"}:
-        #     kvs = kvs[1:]
 
         kws = {}
         for kv in kvs:
@@ -305,19 +340,84 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
         return call, kws
 
-    def send_reply(self, body, content_type='xml'):
+    def send_reply(self, body, content_type='xml', other_headers=None):
+
         self.send_response(200)
         self.send_header("Content-Length", len(body))
         self.send_header("Content-Type", "application/" + content_type)
+        self.send_header("Connection", "keep-alive")
+        if other_headers:
+            for k, v in other_headers.items():
+                self.send_header(k, v)
         self.end_headers()
         if isinstance(body, str):
             body = body.encode("ascii")
+
+        if hasattr(self, 'current_method_name') and self.current_method_name:
+            out = "C:\\.replcache\\websockets_debug\\%s.txt" % self.current_method_name
+            with open(out, 'wb') as f:
+                f.write(body)
+
+        self.wfile.write(body)
+
+    def send_reply2(self, body, content_type='application/xml', other_headers=None):
+        """identical to above, but send the full content_type instead of automatically
+        prefixing "application" """
+        self.send_response(200)
+        self.send_header("Content-Length", len(body))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Connection", "keep-alive")
+        if other_headers:
+            for k, v in other_headers.items():
+                self.send_header(k, v)
+        self.end_headers()
+        if isinstance(body, str):
+            body = body.encode("ascii")
+
+        if hasattr(self, 'current_method_name') and self.current_method_name:
+            out = "C:\\.replcache\\websockets_debug\\%s.txt" % self.current_method_name
+            with open(out, 'wb') as f:
+                f.write(body)
+
+        self.wfile.write(body)
+
+    def send_file_reply(self, path):
+        self.send_response(200)
+        if path.endswith(".js"):
+            with open(path, 'r') as f:
+                body = f.read().encode('utf-8')
+        else:
+            with open(path, 'rb') as f:
+                body = f.read()
+        self.send_header("Content-Length", len(body))
+
+        if path.endswith(".png"):
+            content_type = "image/png"
+        elif path.endswith(".css"):
+            content_type = "text/css"
+        elif path.endswith(".html"):
+            content_type = "text/html"
+        elif path.endswith(".js"):
+            content_type = "application/x-javascript"
+        elif path.endswith(".gif"):
+            content_type = "image/gif"
+        elif path.endswith(".ico"):
+            content_type = "image/x-icon"
+        elif path.endswith(".min.map"):
+            content_type = "application/json"
+        else:
+            raise HelloServerException("Unrecognized mimetype: '%s'" % path)
+
+        self.send_header("Content-Type", content_type)
+        # self.send_header("Connection", "keep-alive")
+        self.end_headers()
         self.wfile.write(body)
 
     def send_reply_with_code(self, code, body, content_type='xml'):
         self.send_response(code)
         self.send_header("Content-Length", len(body))
         self.send_header("Content-Type", "application/" + content_type)
+        self.send_header("Connection", "keep-alive")
         self.end_headers()
         if isinstance(body, str):
             body = body.encode("ascii")
@@ -332,6 +432,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Length", len(response))
         self.send_header("Content-Type", "application/" + content_type)
+        self.send_header("Connection", "keep-alive")
         self.end_headers()
         self.wfile.write(response)
         self.wfile.flush()
@@ -365,6 +466,11 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         """
 
         json = self._get_json_from_kw(params, real_mode)
+        try:
+            del params["_"]
+        except KeyError:
+            pass
+
         if params:
             raise UnexpectedArgument(params, json)
 
@@ -476,6 +582,104 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
         else:
             raise UnknownInternalError("Error Getting Main Info")
 
+    def getconfig_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getConfig.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getunackcount_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getUnAckCount.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getalarmlist_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getAlarmList.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getdoravalues_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getDORAValues.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getaction_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getAction.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getpumps_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getPumps.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getsensorstates_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getSensorStates.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getusers_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\getUsers.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def gettrenddata_wsh(self, params, real_mode=False):
+
+        file = self.hello_folder + "\\hello_websockets\\xml\\gettrenddata.json"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff, 'json')
+
+    def getwebsocket_wsh(self, params, real_mode=False):
+        reply = """{
+"result": "True",
+"message": {
+    "ipaddy": "ws://localhost:9000",
+    "proto": "PBS-WebSocket"
+    }
+}"""
+        self.send_reply(reply, 'json')
+
+    def getreporttypes_wsh(self, params, real_mode=False):
+        file = self.hello_folder + "\\hello_websockets\\xml\\getreporttypes.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getbatches_wsh(self, params, real_mode=False):
+        file = self.hello_folder + "\\hello_websockets\\xml\\getbatches.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getloginstatus_wsh(self, params, real_mode=False):
+        file = self.hello_folder + "\\hello_websockets\\xml\\getloginstatus.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+
+    def getreport_wsh(self, params, real_mode=False):
+        file = self.hello_folder + "\\hello_websockets\\xml\\getreport.xml"
+        with open(file, 'rb') as f:
+            stuff = f.read()
+        self.send_reply(stuff)
+        # self.send_reply2(stuff, "text/csv", {"Content-Disposition": "attachment; filename=\"report.csv\""})
+
 
 class HelloServer(HTTPServer):
     """ A mock hello server that responds to calls.
@@ -522,10 +726,8 @@ def test2():
 
 def run_forever():
     s = HelloServer()
+    print("Running Hello server: %s:%s" % s.server_address)
     s.serve_forever()
 
 if __name__ == '__main__':
-    try:
-        test1()
-    finally:
-        sys.stdout.flush()
+    run_forever()

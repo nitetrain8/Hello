@@ -98,8 +98,15 @@ class HelloApp():
     _headers = {}
     _url_template = "http://%s/webservice/interface/"
 
-    def __init__(self, ipv4, headers=None):
+    def __init__(self, ipv4, headers=None, retry_count=3):
+        """
+        @param ipv4: ipv4 address to connect to (string eg 192.168.1.1:80)
+        @param headers: headers to pass on each http connection
+        @param retry_count: how many times to retry a connection on failure
+                            set to 0 to try forever.
+        """
         self._urlbase = "/webservice/interface/"
+        self.retry_count = retry_count
 
         self._ipv4 = ipv4
         self._host, self._port = self._parse_ipv4(ipv4)
@@ -147,8 +154,7 @@ class HelloApp():
         @type port: int
         @return: HTTPConnection object
         """
-        c = HTTPConnection(host, port)
-        return c
+        return HTTPConnection(host, port)
 
     def close(self):
         if self._connection:
@@ -211,14 +217,14 @@ class HelloApp():
 
     def _do_request(self, url):
         nattempts = 1
-        retrycount = 3
         while True:
             try:
                 self._connection.request('GET', url, None, self.headers)
                 rsp = self._connection.getresponse()
             except (ConnectionAbortedError, BadStatusLine):
-                if nattempts > retrycount:
-                    raise
+                if self.retry_count:
+                    if nattempts > self.retry_count:
+                        raise
             except Exception:
                 # debug. eventually all connection quirks should be worked out
                 # and handled appropriately.
@@ -229,16 +235,18 @@ class HelloApp():
                 print("REQUESTED URL: <%s>" % url)
                 print("=====================================")
                 print(traceback.format_exc())
-                if nattempts > retrycount:
-                    raise
+                if self.retry_count:
+                    if nattempts > self.retry_count:
+                        raise
+                    else:
+                        nattempts += 1
+                self.reconnect()
             else:
                 return rsp
-            nattempts += 1
-            self.reconnect()
 
     def call_hello(self, query):
         """
-        @param query: query string to call hello ("?&cal=....")
+        @param query: query string to call hello ("?&call=....")
         @type query: str
         @return: http response object
         @rtype: http.client.HTTPResponse
@@ -293,6 +301,25 @@ class HelloApp():
         if not xml.result:
             raise ServerCallError(xml.msg)
         return xml.data['Alarms']
+        
+    def getAlarmList(self):
+        query = "?&call=getAlarmList"
+        rsp = self.call_hello(query)
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+            
+        # Not a parsing bug. the name of the cluster is "cluster". 
+        return xml.data['cluster']  
+        
+    def getUnAckCount(self):
+        query = "?&call=getUnAckCount"
+        rsp = self.call_hello(query)
+        xml = HelloXML(rsp)
+        if not xml.result:
+            raise ServerCallError(xml.msg)
+        return int(xml.data)
+        
 
     def getReport(self, mode, type, val1, val2='', timeout=120000):
         """
@@ -500,7 +527,14 @@ class HelloApp():
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
-        return xml.data['System Variables']
+            
+        # apparently Hello works just fine with either
+        # of these, so the server can send back either one
+        # check here so that we return the correct key. 
+        try:
+            return xml.data['System Variables']
+        except KeyError:
+            return xml.data['System_Variables']
 
     gpcfg = getConfig
 
@@ -577,9 +611,6 @@ class HelloXML():
         for c in elems:
             parser = get_parser(c.tag)
             if parser:
-                # must pass parser self explicitly, as
-                # parse types dict is created in class body
-                # (before methods become bound).
                 k, v = parser(self, c)
             else:
                 k, v = self.parse(c)
@@ -754,9 +785,6 @@ class BatchListXML():
         for c in elems:
             parser = get_parser(c.tag)
             if parser:
-                # must pass parser self explicitly, as
-                # parse types dict is created in class body
-                # (before methods become bound).
                 k, v = parser(self, c)
             else:
                 k, v = self.parse(c)
@@ -847,7 +875,8 @@ def __test5():
     HelloApp('192.168.1.6').getdoravalues()
 
 if __name__ == '__main__':
-    __test2()
-    __test3()
-    __test4()
-    __test5()
+    pass
+    #__test2()
+    #__test3()
+    #__test4()
+    #__test5()

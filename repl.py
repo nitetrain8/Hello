@@ -425,6 +425,19 @@ def over_weekend_150130(ipv4='192.168.1.4'):
         app.settemp(0, 37)
 
 
+def power_curve_pbs3dyncI():
+    global sps, p
+    sps = tuple(range(10, 101, 10))[::-1]
+    p = Poller(sps, 40, 60, '192.168.1.11')
+    p.set_logname("PBS 3 dync I Power Curve")
+    try:
+        run_poll(p)
+    except:
+        import traceback
+        traceback.print_exc()
+    return p
+
+main = power_curve_pbs3dyncI
 
 if __name__ == '__main__':
     # from hello import HelloApp
