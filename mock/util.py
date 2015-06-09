@@ -315,14 +315,13 @@ class HelloXMLGenerator():
         if isinstance(msg, bytes):
             msg = msg.decode('utf-8', 'strict')
 
+        message = SubElement(reply, "Message")
         # check if object is iterable and not a string
         try:
             iter(msg)
         except TypeError:
             msg = str(msg)
-        else:
-            pass
-        message = SubElement(reply, "Message")
+
         if isinstance(msg, str):
             message.text = msg
             message.tail = ""

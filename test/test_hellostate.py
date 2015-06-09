@@ -949,10 +949,10 @@ class TestXMLUtilities(unittest.TestCase):
         from hello.hello import HelloXML
         class DebugXML(HelloXML):
             def __init__(self):
-                pass
+                self._parse_types = self._get_parse_types()
 
-        exp_dict = DebugXML().parse(expected)[1]
-        actual_dict = DebugXML().parse(actual_root)[1]
+        exp_dict = DebugXML().begin_parse(expected)
+        actual_dict = DebugXML().begin_parse(actual_root)
         self.assertEqual(actual_dict, exp_dict)
 
         # self.assertUnorderedXMLEqual(expected, actual_root)

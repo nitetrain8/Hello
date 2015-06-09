@@ -38,7 +38,7 @@ def tearDownModule():
         pass
 
 
-from hello.hello import HelloApp, HelloXML, BatchListXML
+from hello.hello import HelloApp, HelloXML, BatchListXML, BatchEntry
 import pickle
 
 
@@ -111,6 +111,45 @@ class TestHelloXML(unittest.TestCase):
         raw = self.app.call_hello("?&call=getConfig").read()
 
         data = HelloXML(DummyRsp(raw)).data
+
+        with open(fp, 'wb') as f:
+            pickle.dump((raw, data), f)
+
+
+class TestBatchXML(unittest.TestCase):
+    def setUp(self):
+        self.app = HelloApp('192.168.1.82')
+        self.addTypeEqualityFunc(BatchEntry, self.assertBatchEntryEqual)
+
+    def tearDown(self):
+        self.app.close()
+
+    def assertBatchEntryEqual(self, exp, res, msg=""):
+        keys = (
+                "id", "name", "product_number",
+                "rev", "serial_number", "start_time",
+                "stop_time", "user"
+            )
+        for key in keys:
+            self.assertEqual(exp[key], res[key], msg)
+
+    def test_basic(self):
+        fp = join(test_input, "good_getbatches.pkl")
+
+        with open(fp, 'rb') as f:
+            raw, exp_dict = pickle.load(f)
+
+        res_dict = BatchListXML(DummyRsp(raw)).data
+
+        self.assertEqual(list(exp_dict.keys()), list(res_dict.keys()))
+        for key in exp_dict:
+            self.assertEqual(exp_dict[key], res_dict[key])
+
+    def _generate_test_getconfig_data_(self):
+        fp = join(test_input, "good_getbatches.pkl")
+        raw = self.app.call_hello("?&call=getBatches").read()
+
+        data = BatchListXML(DummyRsp(raw)).data
 
         with open(fp, 'wb') as f:
             pickle.dump((raw, data), f)

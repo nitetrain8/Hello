@@ -19,6 +19,7 @@ from xml.etree.ElementTree import XMLParser, XML as parse_xml
 from json import loads as json_loads
 from re import compile as re_compile
 from time import time
+import types
 
 
 class BadError(Exception):
@@ -571,15 +572,30 @@ class HelloXML():
         else:
             root = parse_rsp(xml)
 
-        self._parse_types = self._parse_types
+        self._parse_types = self._get_parse_types()
+
+        self._init(root)
+
+    def _get_parse_types(self):
+        return {
+            'DBL': self.parse_float,
+            'I32': self.parse_int,
+            'I16': self.parse_int,
+            'U16': self.parse_int,
+            'U8': self.parse_int,
+            'Cluster': self.parse_cluster,
+            'String': self.parse_string,
+            'Boolean': self.parse_bool
+        }
+
+    def _init(self, root):
         self._parsed = False
 
         # begin
-        name, parsed = self.parse(root)
-        self.parse_dict = {name: parsed}
-        self.reply = parsed
-        self.result = parsed['Result'] == 'True'
-        self.data = self.msg = parsed['Message']
+        data = self.begin_parse(root)
+        self.parse_dict = data['Reply']
+        self.result = self.parse_dict['Result'] == 'True'
+        self.data = self.msg = self.parse_dict['Message']
 
         if self.msg == 'True':
             raise TrueError("Expected response, got \"True\"")
@@ -593,69 +609,63 @@ class HelloXML():
         else:
             raise BadError("No data!")
 
-    def parse(self, e):
+    def begin_parse(self, root):
+        rv = {}
+        self.parse(root, rv)
+        return rv
+
+    def parse(self, e, ns):
         name = e.tag
         children = list(e)
         if not children:
-            return name, e.text
-        val = self.parse_children(children)
-        return name, val
+            ns[name] = e.text
+        else:
+            val = {}
+            self.parse_children(children, val)
+            ns[name] = val
 
-    def parse_children(self, elems):
+    def parse_children(self, elems, ns):
         """
         @param elems: elements
         @type elems: list[xml.etree.ElementTree.Element]
         """
-        rv = {}
         get_parser = self._parse_types.get
         for c in elems:
             parser = get_parser(c.tag)
             if parser:
-                k, v = parser(self, c)
+                parser(c, ns)
             else:
-                k, v = self.parse(c)
-            rv[k] = v
-        return rv
+                self.parse(c, ns)
 
-    def parse_int(self, e):
+    def parse_int(self, e, ns):
         name = e[0].text
         val = e[1].text
-        val = int(val)
-        return name, val
+        val = int(val or 0)
+        ns[name] = val
 
-    def parse_bool(self, e):
+    def parse_bool(self, e, ns):
         name = e[0].text
         val = e[1].text
-        val = bool(val)
-        return name, val
+        val = bool(val or False)
+        ns[name] = val
 
-    def parse_string(self, e):
+    def parse_string(self, e, ns):
         name = e[0].text
         val = e[1].text
         val = str(val)
-        return name, val
+        ns[name] = val
 
-    def parse_float(self, e):
+    def parse_float(self, e, ns):
         name = e[0].text
         val = e[1].text
-        val = float(val)
-        return name, val
+        val = float(val or 0.0)
+        ns[name] = val
 
-    def parse_cluster(self, e):
+    def parse_cluster(self, e, ns):
+        val = {}
         name = e[0].text
-        val = self.parse_children(e[2:])
-        return name, val
-
-    _parse_types = {
-        'DBL': parse_float,
-        'I32': parse_int,
-        'I16': parse_int,
-        'U16': parse_int,
-        'U8': parse_int,
-        'Cluster': parse_cluster,
-        'String': parse_string,
-        'Boolean': parse_bool
-    }
+        self.parse_children(e[2:], val)
+        ns[name] = val
 
 
 class BatchEntry():
@@ -708,43 +718,46 @@ class BatchEntry():
                                      self.user, self.start_time, self.stop_time)
 
 
-class BatchListXML():
+class BatchListXML(HelloXML):
     """ The xml from getBatches is stupid and needs
     a different parsing scheme, and its own class.
     """
-    def __init__(self, xml):
-        root = parse_rsp(xml)
 
-        self._parse_types = self._parse_types
+    def _get_parse_types(self):
+        rv = HelloXML._get_parse_types(self)
+        rv['Array'] = types.MethodType(HelloXML.parse_cluster, self)
+        return rv
+
+    def _init(self, root):
+
         self._parsed = False
-        name, parsed = self.parse(root)
+        data = self.begin_parse(root)
 
         # Bad things happen if this code tries to proceed
         # with a TrueBug response, so raise an error here.
-        if parsed['Message'] == 'True':
+        if data['Reply']['Message'] == 'True':
             raise TrueError()
 
-        self.parse_dict = {name: parsed}
-        self.reply = parsed
-        self.result = parsed['Result'] == 'True'
+        self.parse_dict = data
+        self.reply = data['Reply']
+        self.result = self.reply['Result'] == 'True'
 
         if self.result:
-            ids_to_batches = parsed['Message']['Batches (cluster)']
+            ids_to_batches = self.reply['Message']['Batches (cluster)']
 
             # map names <-> ids
-            # note that many batches may have the same
-            # newer names are overridden with older names,
+            # note that many batches may have the same name.
+            # Newer names are overridden with older names,
             # where 'newer' means 'higher id'
             names_to_batches = {}
             for entry in ids_to_batches.values():
-                entry_copy = entry.copy()
-                name = entry_copy["Name"]
-                id = entry_copy['ID']
+                name = entry["Name"]
+                id = entry['ID']
                 if name in names_to_batches:
                     if id > names_to_batches[name]['ID']:
-                        names_to_batches[name] = entry_copy
+                        names_to_batches[name] = entry
                 else:
-                    names_to_batches[name] = entry_copy
+                    names_to_batches[name] = entry
 
             self.names_to_batches = names_to_batches
             self.ids_to_batches = self.data = OrderedDict(sorted(ids_to_batches.items()))
@@ -752,7 +765,7 @@ class BatchListXML():
             self._parsed = True
         else:
             self.names_to_batches = self.ids_to_batches = None
-            self.data = parsed['Message']
+            self.data = self.reply['Message']
 
     def getdata(self):
         if self._parsed:
@@ -767,86 +780,24 @@ class BatchListXML():
         name = name.lower()
         return self.names_to_batches[name].id
 
-    def parse(self, e):
-        name = e.tag
-        children = list(e)
-        if not children:
-            return name, e.text
-        val = self.parse_children(children)
-        return name, val
-
-    def parse_children(self, elems):
-        """
-        @param elems: elements
-        @type elems: list[xml.etree.ElementTree.Element]
-        """
-        rv = {}
-        get_parser = self._parse_types.get
-        for c in elems:
-            parser = get_parser(c.tag)
-            if parser:
-                k, v = parser(self, c)
-            else:
-                k, v = self.parse(c)
-            rv[k] = v
-        return rv
-
-    def parse_int(self, e):
-        name = e[0].text
-        val = e[1].text
-        val = int(val or 0)
-        return name, val
-
-    def parse_string(self, e):
-        name = e[0].text
-        val = e[1].text
-        val = str(val)
-        return name, val
-
-    def parse_float(self, e):
-        name = e[0].text
-        val = e[1].text
-        val = float(val)
-        return name, val
-
-    def parse_array(self, e):
-        name = e[0].text
-        val = self.parse_children(e[2:])
-        return name, val
-
     def parse_batch(self, e):
-        val = self.parse_children(e[2:])
+        val = {}
+        self.parse_children(e[2:], val)
         g = val.get  # brevity
-        b = BatchEntry(g('ID'), g('Name'), g('Serial Number'), g('User'),
-                       g('Start Time'), g('Stop Time'), g('Product Number'), g('Rev'))
+        b = BatchEntry(g('ID'), g('Name'), g('Serial Number'),
+                       g('User'), g('Start Time'), g('Stop Time'),
+                       g('Product Number'), g('Rev'))
         return b
 
-    def parse_cluster(self, e):
+    def parse_cluster(self, e, ns):
         cname = e[0].text
         if cname == 'Batch':
             val = self.parse_batch(e)
         else:
-            val = self.parse_children(e[2:])
+            val = {}
+            self.parse_children(e[2:], val)
         name = val['ID']
-        return name, val
-
-    def parse_bool(self, e):
-        name = e[0].text
-        val = e[1].text
-        val = bool(val)
-        return name, val
-
-    _parse_types = {
-        'DBL': parse_float,
-        'I32': parse_int,
-        'I16': parse_int,
-        'U16': parse_int,
-        'U8': parse_int,
-        'Cluster': parse_cluster,
-        'String': parse_string,
-        'Array': parse_array,
-        'Boolean': parse_bool
-    }
+        ns[name] = val
 
 
 def __test2():
