@@ -108,7 +108,7 @@ class TestHelloXML(unittest.TestCase):
     def _generate_test_getconfig_data_(self):
 
         fp = join(test_input, "good_getconfig.pkl")
-        raw = self.app.call_hello("?&call=getConfig").read()
+        raw = self.app.send_request("?&call=getConfig").read()
 
         data = HelloXML(DummyRsp(raw)).data
 
@@ -147,7 +147,7 @@ class TestBatchXML(unittest.TestCase):
 
     def _generate_test_getconfig_data_(self):
         fp = join(test_input, "good_getbatches.pkl")
-        raw = self.app.call_hello("?&call=getBatches").read()
+        raw = self.app.send_request("?&call=getBatches").read()
 
         data = BatchListXML(DummyRsp(raw)).data
 

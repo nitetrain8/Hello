@@ -258,7 +258,7 @@ def download_batches_150128(do_download=False):
 
         app = HelloApp('192.168.1.4')
         app.login()
-        batches = app.getbatches()
+        batches = app.getBatches()
     pths = []
 
     for i in range(1, 4):

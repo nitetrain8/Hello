@@ -183,7 +183,7 @@ class TestServerCalls(unittest.TestCase):
     def do_get_call(self, call, args=(), rtype='xml', needlogin=False):
         if not self.logged_in and needlogin:
             self.login(True)
-        rsp = self.app.call_hello_from_args2(call, args)
+        rsp = self.app.request_from_call_and_args(call, args)
         self.calls_seen.add(call)
         if rtype == 'json':
             self._validate_json_get(rsp)
@@ -193,7 +193,7 @@ class TestServerCalls(unittest.TestCase):
     def do_set_call(self, call, args=(), needlogin=True):
         if not self.logged_in and needlogin:
             self.login(True)
-        rsp = self.app.call_hello_from_args2(call, args)
+        rsp = self.app.request_from_call_and_args(call, args)
         self.calls_seen.add(call)
         self._validate_set(rsp)
 
@@ -281,7 +281,7 @@ class TestServerCalls(unittest.TestCase):
         # inline do_set_call
         if not self.logged_in:
             self.login(True)
-        rsp = self.app.call_hello_from_args2('setUnlockDoor')
+        rsp = self.app.request_from_call_and_args('setUnlockDoor')
         self.calls_seen.add('setUnlockDoor')
 
         # inline validate_set
@@ -372,7 +372,7 @@ class TestServerCalls(unittest.TestCase):
         self.do_set_call('savetrialcal', (('sensor', 'doa'),))
 
     def test_AutoPilot(self):
-        rsp = self.app.call_hello_from_args2("getRecipes", (("loader", "Loading+recipes"),))
+        rsp = self.app.request_from_call_and_args("getRecipes", (("loader", "Loading+recipes"),))
         txt = rsp.read().decode('utf-8')
         self.calls_seen.add("getRecipes")
         self._validate_xml_get('getRecipes', txt)

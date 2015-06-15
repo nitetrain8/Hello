@@ -20,6 +20,7 @@ from json import loads as json_loads
 from re import compile as re_compile
 from time import time
 import types
+import logging
 
 
 class BadError(Exception):
@@ -94,8 +95,14 @@ def parse_rsp(rsp):
     return parser.close()
 
 
-class HelloApp():
+class LVWSHTTPConnection(HTTPConnection):
+    def do_request(self, meth, url, body=None, headers=None):
+        headers = headers or {}
+        self.request(meth, url, body, headers)
+        return self.getresponse()
 
+
+class BaseHelloApp():
     _headers = {}
     _url_template = "http://%s/webservice/interface/"
 
@@ -119,6 +126,16 @@ class HelloApp():
             self.headers.update(headers)
 
         self._parse_rsp = parse_rsp
+
+        # setup logger and export some methods
+        self._logger = logging.Logger(self._calc_logger_name(ipv4))
+        self._log = self._logger.log
+        self._debug = self._logger.debug
+        self._warn = self._logger.warning
+        self._info = self._logger.info
+
+    def _calc_logger_name(self, ipv4):
+        return "%s: %s" % (self.__class__.__name__, ipv4)
 
     def _parse_ipv4(self, ipv4):
         """
@@ -155,7 +172,7 @@ class HelloApp():
         @type port: int
         @return: HTTPConnection object
         """
-        return HTTPConnection(host, port)
+        return LVWSHTTPConnection(host, port)
 
     def close(self):
         if self._connection:
@@ -180,12 +197,14 @@ class HelloApp():
         """
         if ipv4 == self._ipv4:
             return
+        self.close()
         self._urlbase = self._url_template % ipv4
         self._ipv4 = ipv4
         self._host, self._port = self._parse_ipv4(ipv4)
         self._connection = self._init_connection(self._host, self._port)
+        self._logger.name = self._calc_logger_name(ipv4)
 
-    def call_hello_from_args2(self, call, args=()):
+    def request_from_call_and_args(self, call, args=()):
         """
         same as below, but 'call' is a separate argument
         """
@@ -193,16 +212,13 @@ class HelloApp():
             query = ''.join(("?&call=", call, "&", "&".join("%s=%s" % a for a in args)))
         else:
             query = "?&call=" + call
-        return self.call_hello(query)
+        return self.send_request(query)
 
-    def call_hello_from_kwargs(self, call, **kwargs):
-        if kwargs:
-            query = ''.join(("?&call=", call, "&", "&".join("%s=%s" % item for item in kwargs.items())))
-        else:
-            query = "?&call=" + call
-        return self.call_hello(query)
+    def request_from_kwargs(self, **kwargs):
+        query = "?" + "&".join("%s=%s" % item for item in kwargs.items())
+        return self.send_request(query)
 
-    def call_hello_from_args(self, args):
+    def request_from_args(self, args):
         """
         @param args: tuple of (key, value) pairs to build a query string
         @type args: (T, T)
@@ -214,14 +230,13 @@ class HelloApp():
         """
 
         query = "?&" + "&".join("=".join(a) for a in args)
-        return self.call_hello(query)
+        return self.send_request(query)
 
     def _do_request(self, url):
         nattempts = 1
         while True:
             try:
-                self._connection.request('GET', url, None, self.headers)
-                rsp = self._connection.getresponse()
+                rsp = self._connection.do_request('GET', url, None, self.headers)
             except (ConnectionAbortedError, BadStatusLine):
                 if self.retry_count:
                     if nattempts > self.retry_count:
@@ -230,12 +245,13 @@ class HelloApp():
                 # debug. eventually all connection quirks should be worked out
                 # and handled appropriately.
                 import traceback
-                print("=====================================")
-                print("UNKNOWN ERROR OCCURRED DURING REQUEST")
-                print("IPV4 ADDRESS:", self._ipv4)
-                print("REQUESTED URL: <%s>" % url)
-                print("=====================================")
-                print(traceback.format_exc())
+
+                self._warn("=====================================")
+                self._warn("UNKNOWN ERROR OCCURRED DURING REQUEST")
+                self._warn("IPV4 ADDRESS:", self._ipv4)
+                self._warn("REQUESTED URL: <%s>" % url)
+                self._warn("=====================================")
+                self._warn(traceback.format_exc())
                 if self.retry_count:
                     if nattempts > self.retry_count:
                         raise
@@ -245,7 +261,7 @@ class HelloApp():
             else:
                 return rsp
 
-    def call_hello(self, query):
+    def send_request(self, query):
         """
         @param query: query string to call hello ("?&call=....")
         @type query: str
@@ -263,32 +279,37 @@ class HelloApp():
             self.headers['Cookie'] = cookie.split(';', 1)[0]
         return rsp
 
-    def login(self, user='user1', pwd='12345'):
-        query = "?&call=login&val1=%s&val2=%s&loader=Authenticating...&skipValidate=true" % (user, pwd)
-        rsp = self.call_hello(query)
-        return self._do_set_validate(rsp)
-
-    def logout(self):
-        query = "?&call=logout"
-        rsp = self.call_hello(query)
-        return self._do_set_validate(rsp)
-
     def _do_set_validate(self, rsp):
-        # this is faster than calling HelloXML instance
+        """
+        Quickly validate that a set call returned a successful response.
+        """
         root = self._parse_rsp(rsp)
         result = root[0]
         if not result.text == "True":
             raise ServerCallError(root[1].text)
         return True
 
+
+class HelloApp(BaseHelloApp):
+
+    def login(self, user='user1', pwd='12345'):
+        query = "?&call=login&val1=%s&val2=%s&loader=Authenticating...&skipValidate=true" % (user, pwd)
+        rsp = self.send_request(query)
+        return self._do_set_validate(rsp)
+
+    def logout(self):
+        query = "?&call=logout"
+        rsp = self.send_request(query)
+        return self._do_set_validate(rsp)
+
     def startbatch(self, name):
         query = "?&call=setStartBatch&val1=%s" % name
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def endbatch(self):
         query = "?&call=setendbatch"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def getAlarms(self, mode='first', val1='100', val2='1', loader="Loading+alarms..."):
@@ -297,30 +318,29 @@ class HelloApp():
             query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s&loader=%s" % (mode, val1, val2, loader)
         else:
             query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
         return xml.data['Alarms']
-        
+
     def getAlarmList(self):
         query = "?&call=getAlarmList"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
-            
+
         # Not a parsing bug. the name of the cluster is "cluster". 
-        return xml.data['cluster']  
-        
+        return xml.data['cluster']
+
     def getUnAckCount(self):
         query = "?&call=getUnAckCount"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
         return int(xml.data)
-        
 
     def getReport(self, mode, type, val1, val2='', timeout=120000):
         """
@@ -333,15 +353,15 @@ class HelloApp():
         # not sure what timeout does
         query = "?&call=getReport&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
                 (mode, type, val1, val2, timeout)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.data)
         return xml.data
 
-    def getbatches(self):
+    def getBatches(self):
         query = "?&call=getBatches&loader=Loading+batches..."
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = BatchListXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.data)
@@ -358,7 +378,7 @@ class HelloApp():
 
     def getdatareport_bybatchname(self, name):
         query = "?&call=getBatches&loader=Loading+batches..."
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = BatchListXML(rsp)
         try:
             id = xml.getbatchid(name)
@@ -374,7 +394,7 @@ class HelloApp():
             query = "?&call=set&group=do&mode=%s&val1=%s" % (mode, n2)
         else:
             query = "?&call=set&group=do&mode=%s&val1=%s&val2=%s" % (mode, n2, o2)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def setph(self, mode, co2, base=None):
@@ -384,32 +404,32 @@ class HelloApp():
             query = "?&call=set&group=ph&mode=%s&val1=%s" % (mode, co2)
         else:
             query = "?&call=set&group=ph&mode=%s&val1=%s&val2=%s" % (mode, co2, base)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def setmg(self, mode, val):
         query = "?&call=set&group=maingas&mode=%s&val1=%s" % (mode, val)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def setag(self, mode, val):
         query = "?&call=set&group=agitation&mode=%s&val1=%s" % (mode, val)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def settemp(self, mode, val):
         query = "?&call=set&group=temperature&mode=%s&val1=%s" % (mode, val)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def set_mode(self, group, mode, val):
         query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp.read())
 
-    def getdoravalues(self):
+    def getDORAValues(self):
         query = "?&call=getDORAValues"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
 
         # Get dora values ends up returning a blank element
@@ -420,17 +440,17 @@ class HelloApp():
         return xml.data[None]
 
     def batchrunning(self):
-        return self.getdoravalues()['Batch'] != '--'
+        return self.getDORAValues()['Batch'] != '--'
 
     def reciperunning(self):
-        return self.getdoravalues()['Sequence'] != 'Idle'
+        return self.getDORAValues()['Sequence'] != 'Idle'
 
     def reactorname(self):
-        return self.getdoravalues()['Machine Name']
+        return self.getDORAValues()['Machine Name']
 
     def getMainValues(self):
         query = "?&call=getMainValues&json=true"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         mv = json_loads(rsp.read().decode('utf-8'))
         return mv['message']
 
@@ -440,7 +460,7 @@ class HelloApp():
 
     def getAdvancedValues(self):
         query = "?&call=getAdvancedValues"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
@@ -452,7 +472,7 @@ class HelloApp():
     def setconfig(self, group, name, val):
         name = sanitize_url(name)
         query = "?&call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def trycal(self, sensor, val1, target1, val2=None, target2=None):
@@ -471,12 +491,12 @@ class HelloApp():
             # one point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s" % (sensor, val1, target1)
 
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
     def getRawValue(self, sensor):
         query = "?&call=getRawValue&sensor=" + sensor
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.data)
@@ -484,7 +504,7 @@ class HelloApp():
 
     def getVersion(self):
         query = "?&call=getVersion"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.data)
@@ -524,11 +544,11 @@ class HelloApp():
 
     def getConfig(self):
         query = "?&call=getConfig"
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
-            
+
         # apparently Hello works just fine with either
         # of these, so the server can send back either one
         # check here so that we return the correct key. 
@@ -541,15 +561,19 @@ class HelloApp():
 
     def getRecipes(self, loader="Loading+recipes"):
         query = "?&call=getRecipes&loader=" + loader
-        rsp = self.call_hello(query)
+        rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
         return xml.data.split(",")
 
+    # repl support
+
     def __repr__(self):
         base = super().__repr__()
         return ' '.join((base, 'ipv4', self._ipv4))
+
+    __str__ = __repr__
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -560,8 +584,6 @@ class HelloApp():
         for k, v in state.items():
             setattr(self, k, v)
         self._connection = self._init_connection(self._host, self._port)
-
-    __str__ = __repr__
 
 
 class HelloXML():
@@ -801,7 +823,7 @@ class BatchListXML(HelloXML):
 
 
 def __test2():
-    b = HelloApp('192.168.1.6').getbatches()
+    b = HelloApp('192.168.1.6').getBatches()
     d = b.data
 
     def dump_dict(d, name=''):
@@ -823,7 +845,7 @@ def __test4():
 
 
 def __test5():
-    HelloApp('192.168.1.6').getdoravalues()
+    HelloApp('192.168.1.6').getDORAValues()
 
 if __name__ == '__main__':
     pass

@@ -218,7 +218,7 @@ def kla_overnight(app=None, exps=None, volume=2):
     except:
         raise
     else:
-        batches = app.getbatches()
+        batches = app.getBatches()
         reports = []
         for e in results:
             id = batches.getbatchid(e)
@@ -437,12 +437,28 @@ def power_curve_pbs3dyncI():
         traceback.print_exc()
     return p
 
+
+def power_curve_pbs3BetaLogicsI():
+    """
+    Power curve for PBS 3 betalogics i- brush motor with no cap
+    """
+    global sps, p
+    sps = tuple(range(10, 101, 10))[::-1]
+    p = Poller(sps, 40, 60, 'fixme')
+    p.set_logname("PBS 3 dync I Power Curve")
+    try:
+        run_poll(p)
+    except:
+        import traceback
+        traceback.print_exc()
+    return p
+
 main = power_curve_pbs3dyncI
 
 if __name__ == '__main__':
     # from hello import HelloApp
     # app = HelloApp("192.168.1.6")
-    # r = app.getdoravalues()
+    # r = app.getDORAValues()
     # print(r)
     pass
 

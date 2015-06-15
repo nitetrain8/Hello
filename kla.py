@@ -144,7 +144,7 @@ class KLATest(Logger, HelloThing):
         else:
             reports = self._reports
 
-        batch_list = self._app.getbatches(True)
+        batch_list = self._app.getBatches(True)
 
         for name in batches:
             id = batch_list.getbatchid(name)
