@@ -35,10 +35,10 @@ class Logger():
     _default_logname = "LoggerLog"
 
     # used log *filename*
-    _savedateformat = "%m-%d-%Y %H%M"
+    _savedateformat = "%m-%d-%Y %H-%M"
 
     # used for each line in log entry
-    _logdateformat = "%m/%d/%Y %H:%M:%S"
+    _logdateformat = "%m/%d/%Y %H-%M-%S"
 
     def __init__(self, name=''):
         self._log_name = name or self._default_logname
@@ -79,12 +79,28 @@ class Logger():
 
         # Adding tab to make this (in theory) easy to parse
         # via string.split('\t') or regex to extract data from log
+        
+        if pkw.pop("reuse_line", False):
+            pkw['end'] = ""
+            now = "\r" + now
+        
         print(now, "\t", *args, file=self._logbuf, **pkw)
         print(now, "\t", *args, **pkw)
 
     def _log_err(self, *msg, **pkw):
         self._log(*msg, **pkw)
         self._log(format_exc())
+        
+    # Pickle support
+        
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['_logbuf']
+        return state
+        
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._logbuf = StringIO()
 
     def _get_log_name(self):
 
@@ -171,7 +187,7 @@ class BuiltinLogger(logging.Logger):
 
         h1 = logging.StreamHandler(sys.stderr)
         h2 = logging.FileHandler(os.path.join(path, name + ".log"))
-        f = logging.Formatter("%(asctime)s %(levelname)s %(name)s <%(funcName)s>- %(message)s",
+        f = logging.Formatter("%(asctime)s %(levelname)s <%(funcName)s>: %(message)s",
                               logging.Formatter.default_time_format)
 
         for h in (h1, h2):

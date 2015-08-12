@@ -16,7 +16,7 @@ from io import StringIO
 from hello.hello import HelloApp, BadError
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2, FormatChart
-from hello.logger import Logger
+from hello.logger import Logger, BuiltinLogger
 from officelib.xllib.xlcom import HiddenXl
 
 
@@ -45,7 +45,7 @@ class PIDTest():
 
     app = None
 
-    def __init__(self, p, i, d, sp, app_or_ipv4='192.168.1.6'):
+    def __init__(self, p, i, d, sp, app_or_ipv4='192.168.1.6', logger=None):
         """
         @param p: pgain
         @type p: int | float | decimal.Decimal | str
@@ -66,7 +66,9 @@ class PIDTest():
         self.sp = sp
         self.passed = False
         self.data = None
-
+        if logger is None:
+            logger = BuiltinLogger("PIDTest(%.3f, %.3f, %.3f, %d)" % (p, i, d, sp))
+        self.logger = logger
         if type(app_or_ipv4) is HelloApp:
             self.app = app_or_ipv4
         else:
@@ -83,19 +85,20 @@ class PIDTest():
         settle_min = sp - margin
         settle_max = sp + margin
 
+        self.logger.info("Setting PID Settings")
         app.login()
         app.setconfig("Agitation", "P_Gain__(%/RPM)", self.p)
-        app.login()
         app.setconfig("Agitation", "I_Time_(min)", self.i)
-        app.login()
         app.setconfig("Agitation", "D Time (min)", self.d)
-
-        app.login()
+        
+        self.logger.info("Setting agitation to OFF and waiting 30 seconds")
         app.setag(2, 0)
-
         _sleep(30)
+        pv = app.getagpv()
+        if pv > 0:
+            raise ValueError("AgPV not 0 after 30 seconds: got %d" % pv)
 
-        app.login()
+        self.logger.info("Setting Agitation to %d RPM", sp)
         app.setag(0, sp)
         settle_end = _time() + settle_time
         mintime_end = _time() + mintime
@@ -103,6 +106,7 @@ class PIDTest():
         start = _time()
         end = start + timeout
         passed = True
+        self.logger.info("Beginning test")
         while True:
 
             # get time _after_ pv just incase of lag
@@ -120,7 +124,7 @@ class PIDTest():
                 break
 
             _sleep(0.5)
-
+            
         while _time() < mintime_end:
             pv = app.getagpv()
             t = _time()
@@ -131,10 +135,6 @@ class PIDTest():
         self.data = pvs
 
     def _parse_passed(self, passed):
-        """
-        I should stop obsessively programming anti-dumbass features
-        and just make sure not to be a dumbass.
-        """
         return self._passmap[passed]
 
     def __repr__(self):
@@ -278,7 +278,7 @@ class PIDRunner(Logger):
         self._chartmap = None
         self._mintime = mintime
 
-        wb_name = wb_name or "AgPIDTest %s.xlsx" % datetime.now().strftime("%y%m%d%H%M")
+        wb_name = wb_name or "AgPIDTest %s.xlsx" % datetime.now().strftime("%d-%m-%y %H:%M")
         self.set_wb_name(wb_name)
 
         # agitation settings
@@ -286,12 +286,12 @@ class PIDRunner(Logger):
             ("Agitation", "Minimum (RPM)"): 3,
             ("Agitation", "Power Auto Max (%)"): 100,
             ("Agitation", "Power Auto Min (%)"): 0.4,
-            ("Agitation", "Auto Max Startup (%)"): 0.6,
+            ("Agitation", "Auto Max Startup (%)"): 10,
             ("Agitation", "Samples To Average"): 1,
             ("Agitation", "Min Mag Interval (s)"): 0.1,
-            ("Agitation", "Max Change Rate (%/s)"): 100,
-            ("Agitation", "PWM Period (us)"): 1000,
-            ("Agitation", "PWM OnTime (us)"): 1000
+            #("Agitation", "Max Change Rate (%/s)"): 100,
+            #("Agitation", "PWM Period (us)"): 1000,
+            #("Agitation", "PWM OnTime (us)"): 1000
         }
 
     def set_setting(self, group, setting, val):

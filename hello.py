@@ -248,8 +248,8 @@ class BaseHelloApp():
 
                 self._warn("=====================================")
                 self._warn("UNKNOWN ERROR OCCURRED DURING REQUEST")
-                self._warn("IPV4 ADDRESS:", self._ipv4)
-                self._warn("REQUESTED URL: <%s>" % url)
+                self._warn("IPV4 ADDRESS: %s", self._ipv4)
+                self._warn("REQUESTED URL: <%s>", url)
                 self._warn("=====================================")
                 self._warn(traceback.format_exc())
                 if self.retry_count:
@@ -566,6 +566,11 @@ class HelloApp(BaseHelloApp):
         if not xml.result:
             raise ServerCallError(xml.msg)
         return xml.data.split(",")
+        
+    def getTrendData(self, span, group):
+        query = "?&call=getTrendData&spam=%s&group=%s&json=1" % (span, group)
+        rsp = self.send_request(query)
+        return json_loads(rsp.read().decode('utf-8'))
 
     # repl support
 

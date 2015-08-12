@@ -127,9 +127,7 @@ class Poller(BasePoller):
                     break
                 elif t > next_log_time:
                     next_log_time += 10
-                    self._log("Polling. AgPV: %.2f SP: %.2f" %
-                              (float(pv), float(actual_sp)))
-                    self._log("%d of %d seconds passed." % (poll_time - (end - t), poll_time))
+                    self._log("%d of %d seconds passed." % (poll_time - (end - t), poll_time), reuse_line=True)
 
                 sleep(poll_interval)
         except KeyboardInterrupt:
@@ -468,4 +466,5 @@ def test():
 
 
 if __name__ == '__main__':
-    test()
+    if 'get_ipython' not in globals():
+        test()

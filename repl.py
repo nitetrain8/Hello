@@ -2,6 +2,8 @@
 from hello.ag_pid.poll import LowestTester, StartupPoller
 from hello.ag_pid.agpid import SimplePIDRunner
 from hello.ag_pid.poll import Poller
+from hello.hello import HelloApp
+from time import sleep
 
 
 def run_poll(p):
@@ -443,9 +445,14 @@ def power_curve_pbs3BetaLogicsI():
     Power curve for PBS 3 betalogics i- brush motor with no cap
     """
     global sps, p
-    sps = tuple(range(10, 101, 10))[::-1]
-    p = Poller(sps, 40, 60, 'fixme')
-    p.set_logname("PBS 3 dync I Power Curve")
+    sps = tuple(range(1, 101, 1))[::-1]
+    app = HelloApp("192.168.1.9")
+    app.login()
+    for sp in range(10, 101, 10):
+        app.setag(1, sp)
+        sleep(1)
+    p = Poller(sps, 40, 60, app)
+    p.set_logname("PBS 3 BetaLogics I Power Curve")
     try:
         run_poll(p)
     except:
@@ -453,7 +460,106 @@ def power_curve_pbs3BetaLogicsI():
         traceback.print_exc()
     return p
 
-main = power_curve_pbs3dyncI
+
+
+def brush_motor_nocap_settings():
+    pl = (.01, .02, .03, .04, .05)
+    il = (0.005,)
+    dl = [0]  # no d for now
+    sps = 8, 15, 30
+    return pl, il, dl, sps
+
+
+def pid_test_brush_nocap():
+    """
+    overnight pid runner for PBS 80 Mesoblast I PID tuning.
+    """
+    global runner
+    pl, il, dl, sps = brush_motor_nocap_settings()
+    ipv4 = "192.168.1.9"
+    runner = SimplePIDRunner(pl, il, dl, sps, app_or_ipv4=ipv4)
+    runner.set_setting("Agitation", "Auto Max Startup (%)", 5)
+    try:
+        _runagpid(runner)
+    except:
+        print("OMG Error")
+        import traceback
+        print(traceback.format_exc())
+        
+def brush_motor_nocap_settings2():
+    pl = (.008, .01, .012)
+    il = (0.005,)
+    dl = [0]  # no d for now
+    sps = 8, 15, 30, 45
+    return pl, il, dl, sps
+
+
+def pid_test_brush_nocap2():
+    """
+    overnight pid runner for PBS 80 Mesoblast I PID tuning.
+    """
+    global runner
+    pl, il, dl, sps = brush_motor_nocap_settings2()
+    ipv4 = "192.168.1.9"
+    runner = SimplePIDRunner(pl, il, dl, sps, app_or_ipv4=ipv4)
+    runner.set_setting("Agitation", "Auto Max Startup (%)", 3)
+    try:
+        _runagpid(runner)
+    except:
+        print("OMG Error")
+        import traceback
+        print(traceback.format_exc())
+
+        
+def brushless_motor_settings():
+    pl = (.3, .6, .9)
+    il = (0.01, .005, .001)
+    dl = [0]  # no d for now
+    sps = 8, 15, 30, 45
+    return pl, il, dl, sps
+    
+        
+def pid_test_brushless():
+    global runner
+    pl, il, dl, sps = brushless_motor_settings()
+    ipv4 = "71.189.82.196:82"
+    runner = SimplePIDRunner(pl, il, dl, sps, app_or_ipv4=ipv4)
+    runner.set_setting("Agitation", "Auto Max Startup (%)", 10)
+    runner.set_setting("Agitation", "Power Auto Min (%)", 0.1) 
+    
+    try:
+        _runagpid(runner)
+    except:
+        print("OMG Error")
+        import traceback
+        print(traceback.format_exc())
+    
+    
+def power_curve_brushless():
+    """
+    Power curve for PBS 3 betalogics i- brush motor with no cap
+    """
+    global sps, p
+    sps = tuple(range(1, 101, 10))[::-1]
+    app = HelloApp("71.189.82.196:82")
+    app.login()
+    for sp in range(10, 101, 10):
+        app.setag(1, sp)
+        sleep(1)
+    p = Poller(sps, 20, 20, app)
+    p.set_logname("PBS 3 Brushless Motor")
+    try:
+        run_poll(p)
+    except:
+        import traceback
+        traceback.print_exc()
+    return p
+    
+def power_curve_betalogics_troubleshoot():
+    global sps, p
+    sps = 100, 80, 60, 50, 40, 30, 20, 10, 8, 6, 5, 4, 3
+    app = Hello 
+        
 
 if __name__ == '__main__':
     # from hello import HelloApp
