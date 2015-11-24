@@ -132,7 +132,7 @@ class TorqueAnalyzer():
 
 
 def main_150303():
-    path = "C:\\Users\\PBS Biotech\\New folder\\Dropbox\\Nathan's Stuff\\mini torque data\\"
+    path = "C:\\Users\\PBS Biotech\\New folder\\Dropbox\\Nathan's Stuff\\mini torque data\\mini\\initial raw data"
     analyzer = TorqueAnalyzer.from_dir(path)
     analyzer.plot_by_size()
     analyzer.plot_by_weight()

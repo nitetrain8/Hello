@@ -1,8 +1,14 @@
-
-from hello.ag_pid.poll import LowestTester, StartupPoller
-from hello.ag_pid.agpid import SimplePIDRunner
-from hello.ag_pid.poll import Poller
-from hello.hello import HelloApp
+try:
+    from hello.ag_pid.poll import LowestTester, StartupPoller
+    from hello.ag_pid.agpid import SimplePIDRunner
+    from hello.ag_pid.poll import Poller
+    from hello.hello import HelloApp
+except ImportError:
+    from ag_pid.poll import LowestTester, StartupPoller
+    from ag_pid.agpid import SimplePIDRunner
+    from ag_pid.poll import Poller
+    from hello import HelloApp
+    
 from time import sleep
 
 
@@ -535,13 +541,13 @@ def pid_test_brushless():
         print(traceback.format_exc())
     
     
-def power_curve_brushless():
+def power_curve_brushless(ipv4="71.189.82.196:82"):
     """
     Power curve for PBS 3 betalogics i- brush motor with no cap
     """
     global sps, p
-    sps = tuple(range(1, 101, 10))[::-1]
-    app = HelloApp("71.189.82.196:82")
+    sps = tuple(range(10, 101, 10))[::-1]
+    app = HelloApp(ipv4)
     app.login()
     for sp in range(10, 101, 10):
         app.setag(1, sp)
@@ -566,6 +572,6 @@ if __name__ == '__main__':
     # app = HelloApp("192.168.1.6")
     # r = app.getDORAValues()
     # print(r)
-    pass
+    power_curve_brushless("71.189.82.196:15")
 
 

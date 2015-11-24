@@ -261,6 +261,17 @@ class BaseHelloApp():
             else:
                 return rsp
 
+    def _send_request_raw(self, url):
+        """
+        @return: http response object
+        @rtype: http.client.HTTPResponse
+        """
+        rsp = self._do_request(url)
+        cookie = rsp.headers.get("Set-Cookie")
+        if cookie:
+            self.headers['Cookie'] = cookie.split(';', 1)[0]
+        return rsp
+
     def send_request(self, query):
         """
         @param query: query string to call hello ("?&call=....")
@@ -272,12 +283,7 @@ class BaseHelloApp():
         Query string must be built explicitly.
         """
         url = self._urlbase + query
-        rsp = self._do_request(url)
-
-        cookie = rsp.headers.get("Set-Cookie")
-        if cookie:
-            self.headers['Cookie'] = cookie.split(';', 1)[0]
-        return rsp
+        return self._send_request_raw(url)
 
     def _do_set_validate(self, rsp):
         """
@@ -371,9 +377,16 @@ class HelloApp(BaseHelloApp):
         return self.getReport('byBatch', type, name)
 
     def getdatareport_bybatchid(self, val1):
-        fname = self.getReport('byBatch', 'Data', val1)
-        url = "/reports/" + fname
-        rsp2 = self._do_request(url)
+        """
+        @return: report as a byte string
+        @rtype: bytes
+        """
+        fname = self.getReport('byBatch', 'process_data', val1)
+
+        # chen fucked up the url on the new protocol so bad I had to
+        # restructure helloapp to sensibly work with it
+        url = "/webservice/reports/?&getfile=" + fname
+        rsp2 = self._send_request_raw(url)
         return rsp2.read()
 
     def getdatareport_bybatchname(self, name):

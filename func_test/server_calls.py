@@ -485,7 +485,7 @@ class TestServerCalls(unittest.TestCase):
 
     def test_set(self):
 
-        # cache the initial values to reset at the end
+        # cache the initial values to _internal_reset at the end
         mv = self.app.getMainValues()
 
         group = 'agitation'
