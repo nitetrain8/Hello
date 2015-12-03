@@ -80,7 +80,7 @@ class Viewer(HelloThing):
             self.root.after(self.update_interval, self.update)
 
     def _getpv(self):
-        pv = self._app.getagpv()
+        pv = self.app.getagpv()
         return pv
 
     def main(self):

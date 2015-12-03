@@ -54,7 +54,7 @@ class CompiledMixingSaveAsInfo():
 
     def save_mt(self, mt):
         filename = os.path.join(self.path, mt.name) + ".xlsx"
-        mt.wb.SaveAs(Filename=filename)
+        mt.wb.SaveAs(Filename=filename, FileFormat=const.xlOpenXMLWorkbook)
 
     def save_compiled(self, ct):
         filename = os.path.join(self.path, ct.name) + ".xlsx"
@@ -95,8 +95,10 @@ class CompiledMixingTime():
         self.ws.Cells(2, 22).Value = "T95"
         self.ws.Cells(2, 23).Value = "stdev"
 
+    def sort_tests(self, key=lambda mt: mt.name[-3:]):
+        self.tests.sort(key=key)
+
     def analyze_all(self):
-        self.tests.sort(key=lambda mt: mt.name[-3:])
         with xlcom.HiddenXl(self.xl, True):
             self.logger.info("Running analysis on %d tests.", len(self.tests))
             for mt in self.tests:
@@ -173,9 +175,10 @@ class CompiledMixingTime():
         self._add_chart_to_compiled(mixing_test)
 
         cells = self.ws.Cells
-        row = self.compiled_tests + 3
+        row = self.compiled_tests + 3 + self.compiled_tests // 3
         cells(row, 21).Value = mixing_test.name
         cells(row, 22).Value = mixing_test.t95
+        cells.Columns(21).AutoFit()
 
         self.compiled_tests += 1
 
@@ -378,18 +381,7 @@ class MixingTimeTest():
         row_pv95 = self._find_pv95(cells, cond_data, et_cc)
 
         t95_cell = xladdress.cellStr(row_pv95, et_cc - 1)
-        r = 2
-        c = 1
         lowest_addr = cells(first_data_row, et_cc - 1).Address
-        lowest = logger_timestamp
-        while True:
-            data = cells(r, c).Value
-            if not data:
-                break
-            if data < lowest:
-                lowest = data
-                lowest_addr = cells(r, c).Address
-            c += 3
 
         # 7.4.7 - time from start of batch to t95
         cells(1, et_cc + 6).Value = "T95"
@@ -439,56 +431,23 @@ def test_open_from_batchname():
     c.analyze_all()
 
 
-def M15_TR_005a():
-    def dl_all_batchnames(ipv4='192.168.1.7'):
-        """
-        download all batchnames from the given reactor and
-        analyze them.
-        """
-        app = HelloApp(ipv4)
-        app.login()
-        batches = app.getBatches()
-        names = batches.names_to_batches.keys()
-        dl_batchnames(ipv4, names)
-
-    def dl_batchnames(ipv4, batch_names):
-        c = CompiledMixingTime()
-        c.add_batchnames(ipv4, batch_names)
-        c.analyze_all()
-
 def M15_TR_005a_test():
+    import re
+    from hello import logger
+    logger = logger.BuiltinLogger(__name__)
 
     path = "C:\\.replcache\\mixing_time_raw\\"
-
-    def dl_all_batchnames(ipv4='192.168.1.7'):
-        """
-        download all batchnames from the given reactor and
-        analyze them.
-        """
-        app = HelloApp(ipv4)
-        app.login()
-        batches = app.getBatches()
-        ids = batches.ids_to_batches.keys()
-
-        try:
-            os.makedirs(path)
-        except FileExistsError:
-            pass
-
-        for id in ids:
-            name = batches.getbatchname(id)
-            report = app.getdatareport_bybatchid(id)
-
-            with open(path + name + ".csv", 'wb') as f:
-                f.write(report)
-
-    def analyze_batches():
-        si = CompiledMixingSaveAsInfo(path.replace("_raw", ""))
-        c = CompiledMixingTime(saveas_info=si)
-        for file in os.listdir(path):
+    mixing_test_re = re.compile(r"mt (\d{1,2})\s*rpm (\d+)\.(\d+)")
+    si = CompiledMixingSaveAsInfo(path.replace("_raw", "_mixing"))
+    c = CompiledMixingTime(saveas_info=si, logger=logger)
+    for file in os.listdir(path):
+        m = mixing_test_re.match(file)
+        if not m:
+            continue
+        if m.groups()[1] == "5":
             c.add_csv(path + file)
-        c.analyze_all()
-    analyze_batches()
+    c.sort_tests(key=lambda t: int(mixing_test_re.match(t.name).groups()[0]))
+    c.analyze_all()
 
 if __name__ == '__main__':
     __purge_xl()

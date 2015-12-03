@@ -210,7 +210,7 @@ def export(reports):
 
 
 def kla_overnight(app=None, exps=None, volume=2):
-    from hello.kla import KLATest
+    from hello.kla import MechKLATest
     from hello import HelloApp
     if exps is None:
         exps = [(0, sp, 200) for sp in range(10, 51, 10)]
@@ -220,7 +220,7 @@ def kla_overnight(app=None, exps=None, volume=2):
     global reports, results, batches
     if app is None:
         app = HelloApp("192.168.1.6")
-    kt = KLATest(app)
+    kt = MechKLATest(app)
     try:
         results = kt.run_experiments(volume, exps)
     except:

@@ -95,6 +95,13 @@ def parse_rsp(rsp):
     return parser.close()
 
 
+def open_hello(app_or_ipv4):
+    if isinstance(app_or_ipv4, HelloApp):
+        return app_or_ipv4
+    else:
+        return HelloApp(app_or_ipv4)
+
+
 class LVWSHTTPConnection(HTTPConnection):
     def do_request(self, meth, url, body=None, headers=None):
         headers = headers or {}
@@ -801,7 +808,7 @@ class BatchListXML(HelloXML):
 
             self.names_to_batches = names_to_batches
             self.ids_to_batches = self.data = OrderedDict(sorted(ids_to_batches.items()))
-
+            self.max_id = max(self.ids_to_batches.keys())
             self._parsed = True
         else:
             self.names_to_batches = self.ids_to_batches = None

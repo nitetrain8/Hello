@@ -20,12 +20,15 @@ _debug = _logger.debug
 
 
 class SimpleMenu(ttk.OptionMenu):
-    def __init__(self, master, initvalue, options):
+    def __init__(self, master, command, initvalue, options):
         self.var = tk.StringVar(None, initvalue)
-        ttk.OptionMenu.__init__(self, master, self.var, None, *options)
+        ttk.OptionMenu.__init__(self, master, self.var, None, command=command, *options)
 
     def get(self):
         return self.var.get()
+
+    def grid(self, row, col, **kw):
+        ttk.OptionMenu.grid(self, row=row, column=col, **kw)
 
 
 class ItemButton(ttk.Button):
@@ -117,9 +120,9 @@ class IPAddyFrameView():
         _debug("Clearing all batches")
         self.batch_listbox.clear()
 
-    def grid(self):
+    def grid(self, row, col):
         _debug("Gridding %s" % self.__class__.__name__)
-        self.frame.grid()
+        self.frame.grid(row=row, column=col)
         self.batch_listbox.grid(0, 0)
         self.gb_frame.grid(0, 1)
 
@@ -155,7 +158,7 @@ class IPAddyFrameWidget():
         self.view.getbatches_btn_cb = self.get_batches
 
         if autogrid:
-            self.view.grid()
+            self.view.grid(0, 0)
 
     def get_batches(self):
         _debug("callback called")
@@ -164,25 +167,83 @@ class IPAddyFrameWidget():
         self.view.clear_batches()
         self.view.insert_batches(b.name for b in batches.ids_to_batches.values())
 
-    def grid(self):
-        self.view.grid()
+    def grid(self, row, col):
+        self.view.grid(row, col)
+
+    def grid_forget(self):
+        self.view.grid_forget()
+
+
+class FilenameFrameView():
+    def __init__(self, root):
+        self.frame = ttk.LabelFrame(root)
+        self.listbox = SimpleListbox(self.frame, "Batch List:")
+        self.browse = StatefulItemButton(self.frame, "Browse", self.browse_btn_cb)
+
+    def browse_btn_cb(self):
+        pass  # hook
+
+    def grid(self, row, col):
+        self.frame.grid(row=row, column=col)
+        self.listbox.grid(0, 0)
+        self.browse.grid(2, 0, sticky=tk.E)
+
+
+class FilenameFrameModel():
+    def __init__(self, root):
+        pass
+
+
+class FilenameFrameWidget():
+    def __init__(self, root):
+        self.view = FilenameFrameView(root)
+        self.model = FilenameFrameModel(root)
+
+    def grid(self, row, col):
+        self.view.grid(row, col)
 
     def grid_forget(self):
         self.view.grid_forget()
 
 
 class MixingTimeInterface():
+    str_by_ip = "By IP"
+    str_by_fn = "By Filename"
+
     def __init__(self):
         self.root = tk.Tk()
-        self.frame = IPAddyFrameWidget(self.root)
+        self.active_frame = None
+        ip_frame = IPAddyFrameWidget(self.root)
+        fn_frame = FilenameFrameWidget(self.root)
 
-        self.root.grid()
+        self.name_to_frames = {
+            self.str_by_ip: ip_frame,
+            self.str_by_fn: fn_frame
+        }
+        self.frames_to_names = {v: k for v, k in self.name_to_frames.items()}
+
+        self.menubutton = SimpleMenu(self.root, self.on_menu_change,
+                                     self.str_by_ip, [self.str_by_ip, self.str_by_fn])
+        self.activate_frame(ip_frame)
+        self.menubutton.grid(0, 0, sticky=tk.W)
 
     def mainloop(self):
         _debug("Beginning mainloop")
         self.root.mainloop()
 
+    def activate_frame(self, ip_frame):
+        if self.active_frame:
+            self.active_frame.grid_forget()
+        self.active_frame = ip_frame
+        self.root.grid()
+        self.active_frame.grid(1, 0)
+
+    def on_menu_change(self, txt):
+        if self.name_to_frames[txt] != self.active_frame:
+            self.activate_frame(self.name_to_frames[txt])
+
+
 if __name__ == '__main__':
     m = MixingTimeInterface()
-    m.frame.view.gb_frame.entry_tv.set("192.168.1.7")
+    m.active_frame.view.gb_frame.entry_tv.set("192.168.1.7")
     m.mainloop()

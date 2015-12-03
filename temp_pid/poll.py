@@ -23,7 +23,7 @@ class TempPoller(HelloThing):
         self.done = False
 
     def _poll_forever(self):
-        app = self._app
+        app = self.app
         start = datetime.now()
         now = datetime.now
         self.write("Elapsed, TempPV, Temp SP, HeatDuty\n")
