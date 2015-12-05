@@ -60,7 +60,7 @@ class HelloServerException(Exception):
         line_number_e = SubElement(reply, "LineNo")
         line_number_e.text = str(lineno(2))
 
-        # for some reason, "True" replies encode in windows-1252,
+        # for some reason, LVWS "True" replies encode in windows-1252,
         # but "False" replies (or at least some) encode in UTF-8 (???)
         return simple_xml_dump(reply, encoding)
 
@@ -241,7 +241,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
             return self.parse_path_as_path(path)
 
         # normal path that didn't trip above error block
-        if first != "webservice" or second != "interface":
+        if first != "webservice" or (second not in ("interface", "reports")):
             return self.parse_path_as_path(path)
         return self.GET_QS, qs
 

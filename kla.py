@@ -11,6 +11,9 @@ from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSe
 from officelib.xllib.xladdress import chart_range_strs, cellStr, cellRangeStr
 from re import match
 from os.path import split as path_split
+from datetime import datetime
+from os import makedirs
+from pysrc.snippets import safe_pickle, unique_name
 
 
 __author__ = 'Nathan Starkweather'
@@ -23,6 +26,9 @@ except ImportError:
     from hello.logger import BuiltinLogger
 
 from time import time as _time, sleep as _sleep
+
+
+_docroot = "C:\\.replcache\\"
 
 
 class KLAError(HelloError):
@@ -465,7 +471,7 @@ class KLAAnalyzer():
 
 class KLAReactorContext():
     def __init__(self, air_mfc_max, n2_mfc_max, o2_mfc_max,
-                 co2_mfc_max, main_gas_max, vessel_capacity):
+                 co2_mfc_max, co2_min_flow, main_gas_max, vessel_capacity, is_mag):
         """
         @param air_mfc_max: air mfc max in L/min
         @param n2_mfc_max: n2 mfc max in L/min
@@ -480,22 +486,51 @@ class KLAReactorContext():
         self.n2_mfc_max = n2_mfc_max
         self.o2_mfc_max = o2_mfc_max
         self.co2_mfc_max = co2_mfc_max
+        self.co2_min_flow = co2_min_flow
         self.main_gas_max = main_gas_max
         self.vessel_capacity = vessel_capacity
+        self.is_mag = is_mag
+
+    def __repr__(self):
+        return "KLAReactorContext: %.1f LPM Air MFC, %.1f LPM N2 MFC, %.1f LPM CO2 MFC, %.1f LPM O2 MFC," \
+               "%.1f LPM main gas max, %dL total vessel capacity, %s Drive" % (self.air_mfc_max, self.n2_mfc_max,
+                                                                    self.co2_mfc_max, self.o2_mfc_max,
+                                                                    self.main_gas_max, self.vessel_capacity, "Mag"
+                                                                    if self.is_mag else "Air")
 
 
 class KLATestContext():
     """
     Test parameters for the test itself.
+    Includes filename info, etc.
     """
-    def __init__(self, test_time, headspace_purge_factor):
+    def __init__(self, test_time, headspace_purge_factor, do_setup_limit_pc, docroot=_docroot):
         self.test_time = test_time
         self.hs_purge_factor = headspace_purge_factor
+        self.do_setup_limit = do_setup_limit_pc
+        self.docroot = docroot
+
+    def generate_filename(self, name):
+        """
+        Generate filename.
+        Default impl based on current date.
+        Override for custom behavior if desired.
+        """
+        dirname = "%s%s%s\\" % (self.docroot, "kla",
+                                datetime.now().strftime("%m-%d-%y"))
+        makedirs(dirname, exist_ok=True)
+        filename = dirname + name + ".csv"
+        filename = unique_name(filename)
+        return filename
+
+    def __repr__(self):
+        return "KLATestContext: %d min test time, %dx headspace purge" % \
+               (self.test_time, self.hs_purge_factor)
 
 
-pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.5, 4)
+pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1)
 _default_r_ctx = pbs_3L_ctx
-_default_t_ctx = KLATestContext(7, 5)
+_default_t_ctx = KLATestContext(7, 5, 10)
 
 
 class AirKLATestRunner():
@@ -504,7 +539,11 @@ class AirKLATestRunner():
     """
     def __init__(self, ipv4, reactor_ctx=None, test_ctx=None):
         self.app = open_hello(ipv4)
-        self.tests = []
+        self.tests_to_run = []
+        self.tests_run = []
+        self.tests_skipped = []
+        self.tests_pending = []
+        self.ntests_run = 0
 
         if reactor_ctx is None:
             reactor_ctx = _default_r_ctx
@@ -514,21 +553,62 @@ class AirKLATestRunner():
         self.reactor_ctx = reactor_ctx
         self.test_ctx = test_ctx
 
+    def import_batch(self, batchname):
+        self.app.login()
+        b = self.app.getdatareport_bybatchname(batchname)
+        filename = self.test_ctx.generate_filename(batchname)
+
+        with open(filename, 'wb') as f:
+            f.write(b)
+
+        t = AirKLATest(self.app, 0, 0, 0, batchname, self.reactor_ctx, self.test_ctx)
+        r = KLAReport(batchname, None, b, filename)
+        t.report = r
+        self.tests_run.append(t)
+
+    def pickle_completed(self):
+        pkl_file = self.test_ctx.docroot + "klapickle\\airklatestpikle.pkl"
+        safe_pickle(self.tests_run, pkl_file)
+
     def add_test(self, test):
         """
         @type test: AirKLATest
         """
-        self.tests.append(test)
+        self.tests_to_run.append(test)
 
-    def create_test(self):
+    def create_test(self, main_sp, micro_sp, volume, name):
         # def create_test(a, b, c...)
         # t = AirKLATest(a, b, c...)
         # self.tests.append(t)
-        raise NotImplemented
+        t = AirKLATest(self.app, main_sp, micro_sp, volume, name, self.reactor_ctx, self.test_ctx)
+        self.add_test(t)
+        return t
+
+    def run_once(self):
+        self.ntests_run += 1
+        print("Test #%d starting" % self.ntests_run)
+        t = self.tests_to_run.pop()
+        self.tests_pending.append(t)
+        try:
+            t.run()
+        except SkipTest:
+            self.tests_skipped.append(t)
+        except Exception:
+            print("Oh no!")
+            import traceback
+            traceback.print_exc()
+        else:
+            self.tests_pending.pop()
+            self.tests_run.append(t)
+            assert t.report
 
     def run_all(self):
-        for test in self.tests:
-            test.run()
+        # run all tests. reverse list in the beginning,
+        # then run 1 by 1 using .pop() to iterate in
+        # correct order while removing from list.
+        self.tests_to_run.reverse()
+        while self.tests_to_run:
+            self.run_once()
 
 
 class AirKLATest():
@@ -570,6 +650,11 @@ class AirKLATest():
         if test_ctx is None:
             test_ctx = _default_t_ctx
 
+        if reactor_ctx.is_mag:
+            self.set_gas = self.setmg
+        else:
+            self.set_gas = self.setag
+
         self.reactor_ctx = reactor_ctx
         self.test_ctx = test_ctx
 
@@ -578,19 +663,44 @@ class AirKLATest():
 
     def run(self):
 
+        self.print("")
         self.print("Beginning setup")
         self.setup()
 
         self.print("Clearing headspace")
         self.clear_headspace()
 
-        self.print("Running Experiment")
+        self.print("Running experiment")
         self.experiment()
 
-        self.print("Post Experiment Cleanup")
+        self.print("Post experiment cleanup")
         self.post_experiment()
 
-        self.print("Experiment Concluded")
+        self.print("Experiment concluded")
+
+    def _do_rampup_loop(self, timeout):
+        update_interval = 2
+        end = timeout + _time()
+        while True:
+            do_pv = self.app.getdopv()
+            if do_pv < self.test_ctx.do_setup_limit:
+                break
+            if _time() > end:
+                return False
+            _sleep((end - _time()) % update_interval)
+            self.print("\r                                               ", end='')
+            self.print("\rDO PV: %.1f%%" % do_pv, end='')
+        return True
+
+    def _set_do_rampup(self):
+        co2_flow = self.reactor_ctx.co2_min_flow
+        n2_flow = co2_flow * 5
+        total = co2_flow + n2_flow
+        ph_pc = co2_flow / total * 100
+        do_pc = n2_flow / total * 100
+        self.app.setph(1, ph_pc, 0)
+        self.app.setdo(1, do_pc, 0)
+        self.set_gas(1, total)
 
     def setup(self):
         """
@@ -605,33 +715,38 @@ class AirKLATest():
         The extra 10% helps compensate for increase in
         DO PV caused by air bubbles passing through the
         solution during the headspace purge.
+
+        The poll/wait loop is performed in `_do_rampup_loop`.
+        This makes it a lot easier to use as it needs to be
+        used twice- once with low CO2 flow (to simulate the
+        DO rampup feature) and once with max flow.
         """
         self.app.login()
 
-        ph_pc = self.reactor_ctx.co2_mfc_max / self.reactor_ctx.main_gas_max * 100
-        do_pc = 100 - ph_pc
+        # fastpath
+        if self.app.getdopv() > self.test_ctx.do_setup_limit:
 
-        self.app.setph(1, ph_pc, 0)  # 3L -> 0.3 LPM CO2 micro sparger
-        self.app.setdo(1, do_pc, 0)  # 3L -> 0.2 LPM N2 main sparger
-        self.app.setag(1, self.reactor_ctx.main_gas_max)
+            self._set_do_rampup()
+            if not self._do_rampup_loop(15):
 
-        now = _time()
-        timeout = now + 60 * 30
-        update_interval = 1
-        while True:
-            if _time() > timeout:
-                raise SkipTest("Setup timeout waiting for DO PV < 20%")
-            do_pv = self.app.getdopv()
-            if do_pv < 10:
-                break
-            _sleep((timeout - _time()) % update_interval)
-            self.print("\rDO PV: %.1f                                    " % do_pv)
+                ph_pc = self.reactor_ctx.co2_mfc_max / self.reactor_ctx.main_gas_max * 100
+                do_pc = 100 - ph_pc
+
+                self.app.setph(1, ph_pc, 0)  # 3L -> 0.3 LPM CO2 micro sparger
+                self.app.setdo(1, do_pc, 0)  # 3L -> 0.2 LPM N2 main sparger
+                self.set_gas(1, self.reactor_ctx.main_gas_max)
+
+                self.print("Beginning DO PV bringdown.")
+                if not self._do_rampup_loop(60*30):
+                    raise SkipTest("Setup timeout waiting for DO PV < %d%%" % self.test_ctx.do_setup_limit)
+
+                self.print("")
 
         # post setup- all controllers off.
         self.app.login()
         self.app.setph(2, 0, 0)
         self.app.setdo(2, 0, 0)
-        self.app.setag(2, 0)
+        self.set_gas(2, 0)
 
     def clear_headspace(self):
         """
@@ -643,7 +758,7 @@ class AirKLATest():
         self.app.login()
         self.app.setph(2, 0, 0)
         self.app.setdo(2, 0, 0)
-        self.app.setag(1, self.reactor_ctx.main_gas_max)
+        self.set_gas(1, self.reactor_ctx.main_gas_max)
 
         now = _time()
         end = now + 60 * t_min
@@ -652,23 +767,31 @@ class AirKLATest():
             left = max(left, 0)
             if left < 15:
                 if left:
+                    self.print("\r                                          ", end="")
+                    self.print("\rHeadspace purge: %s seconds remain" % (int(end - _time())), end="")
                     _sleep(left)
                 break
             else:
                 _sleep(int(left) % 15)
-                self.print("Headspace purge: %s seconds remain" %
-                           (int(end - _time())))
+                self.print("\r                                          ", end="")
+                self.print("\rHeadspace purge: %s seconds remain" % (int(end - _time())), end="")
                 _sleep(1)
 
+        self.print("Purge Finished")
         self.app.login()
-        self.app.setag(2, 0)
+        self.set_gas(2, 0)
 
     def experiment(self):
 
         self.app.login()
+
         if self.app.batchrunning():
             self.app.endbatch()
         self.app.startbatch(self.name)
+
+        self.app.setph(2, 0, 0)
+        self.app.setdo(1, 0, self.micro_sp)
+        self.set_gas(1, self.main_sp)
 
         end = _time() + self.test_ctx.test_time * 60
         update_interval = 15
@@ -677,17 +800,33 @@ class AirKLATest():
             if left < update_interval:
                 _sleep(left)
                 break
-            self.print("Experiment running: %s seconds left" % left)
+            self.print("\r                                               ", end="")
+            self.print("\rExperiment running: %s seconds left" % int(end - _time()), end="")
             _sleep(left % 15)
 
+        self.print("")
         self.app.login()
         self.app.endbatch()
 
+        self.set_gas(2, 0)
+        self.app.setdo(2, 0)
+
     def post_experiment(self):
-        # Todo: download report to <somewhere sane> with
-        # Todo: <sane filename> (or not), store KLAReport
-        # Todo: instance as self.report.
-        raise NotImplementedError
+
+        self.app.login()
+        b = self.app.getdatareport_bybatchname(self.name)
+
+        filename = self.test_ctx.generate_filename(self.name)
+        with open(filename, 'wb') as f:
+            f.write(b)
+
+        self.report = KLAReport(self.name, None, b, filename)
+
+    def setmg(self, mode, val):
+        self.app.setmg(mode, val)
+
+    def setag(self, mode, val):
+        self.app.setag(mode, val)
 
 
 def __test_analyze_kla():
@@ -696,10 +835,26 @@ def __test_analyze_kla():
     file = test_dir + "kla0-10-200 id-35 27-10-14.csv"
     KLAAnalyzer((file,)).analyze_all()
 
-tka = __test_analyze_kla
+
+def __test_airkla():
+
+    rc = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1)
+    tc = KLATestContext(7, 5, 5)
+
+    r = AirKLATestRunner("71.189.82.196:6", rc, tc)
+    r.test_ctx.hs_purge_factor = 0.5
+    r.test_ctx.test_time = 1
+    r.test_ctx.do_setup_limit = 15
+
+    r.create_test(0.051, 60, 3, "kla t11 id27")
+    r.create_test(0.153, 60, 3, "kla t55 id55")
+    return r
 
 
 if __name__ == '__main__':
     # test = MechKLATest('192.168.1.6')
     # test.setup()
-    __test_analyze_kla()
+    r = __test_airkla()
+    t = r.tests_to_run[0]
+    t.setup()
+

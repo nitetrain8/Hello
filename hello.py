@@ -11,7 +11,7 @@ from other modules/ipython sessions/etc.
 Maybe turn into __init__.py?
 """
 from collections import OrderedDict
-from http.client import HTTPConnection, BadStatusLine
+from http.client import HTTPConnection, BadStatusLine, CannotSendRequest
 
 __author__ = 'Nathan Starkweather'
 
@@ -244,10 +244,11 @@ class BaseHelloApp():
         while True:
             try:
                 rsp = self._connection.do_request('GET', url, None, self.headers)
-            except (ConnectionAbortedError, BadStatusLine):
+            except (ConnectionAbortedError, BadStatusLine, CannotSendRequest):
                 if self.retry_count:
                     if nattempts > self.retry_count:
                         raise
+                self.reconnect()
             except Exception:
                 # debug. eventually all connection quirks should be worked out
                 # and handled appropriately.
@@ -316,6 +317,7 @@ class HelloApp(BaseHelloApp):
         return self._do_set_validate(rsp)
 
     def startbatch(self, name):
+        name = name.replace(" ", "+")
         query = "?&call=setStartBatch&val1=%s" % name
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
