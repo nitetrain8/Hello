@@ -578,24 +578,26 @@ def kla_load_from_file():
         import kla
 
     rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1)
-    # tc = kla.KLATestContext(7, 5, 6)
-    tc = kla.KLATestContext(1, 0.1, 20)
+    tc = kla.KLATestContext(7, 5, 6)
+    # tc = kla.KLATestContext(1, 0.1, 20)
     r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
 
     filepath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
     with open(filepath, 'r') as f:
-        f.readline()
+        f.readline()  # discard header
+
         for line in f:
             tno, tid, vol, maingas, microgas = line.split(",")
             name = "kla t%s id%s" % (tno, tid)
-            print(tno, tid, vol, maingas, microgas.rstrip("\n"))
+
             if int(tid) == 26:
                 continue
+
+            print(tno, tid, vol, maingas, microgas.rstrip("\n"))
             r.create_test(float(maingas), float(microgas), float(vol), name)
 
     try:
-        for i in range(5):
-            r.run_once()
+        r.run_all()
     finally:
         return r
 

@@ -9,11 +9,14 @@ Created in: PyCharm Community Edition
 from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatterLines
 from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSeries, HiddenXl, AddTrendlines
 from officelib.xllib.xladdress import chart_range_strs, cellStr, cellRangeStr
+from pysrc.snippets import safe_pickle, unique_name
+
 from re import match
 from os.path import split as path_split
 from datetime import datetime
 from os import makedirs
-from pysrc.snippets import safe_pickle, unique_name
+import traceback
+from time import time as _time, sleep as _sleep
 
 
 __author__ = 'Nathan Starkweather'
@@ -24,8 +27,6 @@ try:
 except ImportError:
     from hello.hello import HelloError, HelloApp, open_hello
     from hello.logger import BuiltinLogger
-
-from time import time as _time, sleep as _sleep
 
 
 _docroot = "C:\\.replcache\\"
@@ -504,10 +505,10 @@ class KLATestContext():
     Test parameters for the test itself.
     Includes filename info, etc.
     """
-    def __init__(self, test_time, headspace_purge_factor, do_setup_limit_pc, docroot=_docroot):
+    def __init__(self, test_time, headspace_purge_factor, do_start_target, docroot=_docroot):
         self.test_time = test_time
         self.hs_purge_factor = headspace_purge_factor
-        self.do_setup_limit = do_setup_limit_pc
+        self.do_start_target = do_start_target
         self.docroot = docroot
 
     def generate_filename(self, name):
@@ -524,8 +525,8 @@ class KLATestContext():
         return filename
 
     def __repr__(self):
-        return "KLATestContext: %d min test time, %dx headspace purge" % \
-               (self.test_time, self.hs_purge_factor)
+        return "KLATestContext: %d min test time, %dx headspace purge, %d%% DO start target" % \
+               (self.test_time, self.hs_purge_factor, self.do_start_target)
 
 
 pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1)
@@ -584,19 +585,23 @@ class AirKLATestRunner():
         self.add_test(t)
         return t
 
+    def skip_current_test(self):
+        t = self.tests_pending.pop()
+        self.tests_skipped.append(t)
+
     def run_once(self):
         self.ntests_run += 1
-        print("Test #%d starting" % self.ntests_run)
         t = self.tests_to_run.pop()
+        print("Test #%d starting: %s" % (self.ntests_run, t.get_info()))
         self.tests_pending.append(t)
         try:
             t.run()
-        except SkipTest:
-            self.tests_skipped.append(t)
+        except SkipTest as e:
+            print(e.args)
+            self.skip_current_test()
         except Exception:
-            print("Oh no!")
-            import traceback
             traceback.print_exc()
+            self.skip_current_test()
         else:
             self.tests_pending.pop()
             self.tests_run.append(t)
@@ -661,9 +666,16 @@ class AirKLATest():
         # Can be changed to logger.info, etc
         self.print = print
 
+    def get_info(self):
+        """
+        @return: string describing the test
+        """
+        return '"%s" %.3fLPM %dmLPM %.2fL' % (self.name, self.main_sp, self.micro_sp, self.volume)
+
+    __repr__ = get_info
+
     def run(self):
 
-        self.print("")
         self.print("Beginning setup")
         self.setup()
 
@@ -678,14 +690,16 @@ class AirKLATest():
 
         self.print("Experiment concluded")
 
-    def _do_rampup_loop(self, timeout):
+    def _poll_do_setup(self, timeout):
         update_interval = 2
         end = timeout + _time()
         while True:
             do_pv = self.app.getdopv()
-            if do_pv < self.test_ctx.do_setup_limit:
-                break
+            if do_pv < self.test_ctx.do_start_target:
+                self.print("")
+                return True
             if _time() > end:
+                self.print("")
                 return False
             _sleep((end - _time()) % update_interval)
             self.print("\r                                               ", end='')
@@ -716,7 +730,7 @@ class AirKLATest():
         DO PV caused by air bubbles passing through the
         solution during the headspace purge.
 
-        The poll/wait loop is performed in `_do_rampup_loop`.
+        The poll/wait loop is performed in `_poll_do_setup`.
         This makes it a lot easier to use as it needs to be
         used twice- once with low CO2 flow (to simulate the
         DO rampup feature) and once with max flow.
@@ -724,10 +738,11 @@ class AirKLATest():
         self.app.login()
 
         # fastpath
-        if self.app.getdopv() > self.test_ctx.do_setup_limit:
+        if self.app.getdopv() > self.test_ctx.do_start_target:
 
+            self.print("Beginning DO PV bringdown.")
             self._set_do_rampup()
-            if not self._do_rampup_loop(15):
+            if not self._poll_do_setup(15):
 
                 ph_pc = self.reactor_ctx.co2_mfc_max / self.reactor_ctx.main_gas_max * 100
                 do_pc = 100 - ph_pc
@@ -736,9 +751,8 @@ class AirKLATest():
                 self.app.setdo(1, do_pc, 0)  # 3L -> 0.2 LPM N2 main sparger
                 self.set_gas(1, self.reactor_ctx.main_gas_max)
 
-                self.print("Beginning DO PV bringdown.")
-                if not self._do_rampup_loop(60*30):
-                    raise SkipTest("Setup timeout waiting for DO PV < %d%%" % self.test_ctx.do_setup_limit)
+                if not self._poll_do_setup(60 * 30):
+                    raise SkipTest("Setup timeout waiting for DO PV < %d%%" % self.test_ctx.do_start_target)
 
                 self.print("")
 
@@ -777,7 +791,7 @@ class AirKLATest():
                 self.print("\rHeadspace purge: %s seconds remain" % (int(end - _time())), end="")
                 _sleep(1)
 
-        self.print("Purge Finished")
+        self.print("\nPurge Finished")
         self.app.login()
         self.set_gas(2, 0)
 
@@ -800,8 +814,9 @@ class AirKLATest():
             if left < update_interval:
                 _sleep(left)
                 break
-            self.print("\r                                               ", end="")
-            self.print("\rExperiment running: %s seconds left" % int(end - _time()), end="")
+            self.print("\r                                                          ", end="")
+            self.print("\rExperiment running: %s seconds left. DO PV: %.1f%%" %
+                       (int(end - _time()), self.app.getdopv()), end="")
             _sleep(left % 15)
 
         self.print("")
@@ -844,7 +859,7 @@ def __test_airkla():
     r = AirKLATestRunner("71.189.82.196:6", rc, tc)
     r.test_ctx.hs_purge_factor = 0.5
     r.test_ctx.test_time = 1
-    r.test_ctx.do_setup_limit = 15
+    r.test_ctx.do_start_target = 15
 
     r.create_test(0.051, 60, 3, "kla t11 id27")
     r.create_test(0.153, 60, 3, "kla t55 id55")
