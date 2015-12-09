@@ -284,7 +284,7 @@ class HelloHTTPHandler(SimpleHTTPRequestHandler):
 
                 # Enable this line to enable output of calls to filesystem
                 # (see self.send_reply)
-                # self.current_method_name = method_name
+                # self.current_method_name = _try_getreport
 
                 handler = getattr(self, method_name, None)
                 if handler is None:

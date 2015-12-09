@@ -11,7 +11,7 @@ from other modules/ipython sessions/etc.
 Maybe turn into __init__.py?
 """
 from collections import OrderedDict
-from http.client import HTTPConnection, BadStatusLine, CannotSendRequest
+from http.client import HTTPConnection, HTTPException
 
 __author__ = 'Nathan Starkweather'
 
@@ -42,12 +42,13 @@ class TrueError(ServerCallError):
     """
 
 
-class AuthError(ServerCallError):
-    """ Authentication Error. Most likely due to
-    failure to properly maintain state across multiple
-    server calls.
-    """
-    pass
+# class AuthError(ServerCallError):
+#     """ Authentication Error. Most likely due to
+#     failure to properly maintain state across multiple
+#     server calls.
+#     """
+#     pass
+AuthError = ServerCallError
 
 
 class XMLError(HelloError):
@@ -244,10 +245,12 @@ class BaseHelloApp():
         while True:
             try:
                 rsp = self._connection.do_request('GET', url, None, self.headers)
-            except (ConnectionAbortedError, BadStatusLine, CannotSendRequest):
+            except (ConnectionError, HTTPException):
                 if self.retry_count:
                     if nattempts > self.retry_count:
                         raise
+                    else:
+                        nattempts += 1
                 self.reconnect()
             except Exception:
                 # debug. eventually all connection quirks should be worked out
@@ -796,14 +799,14 @@ class BatchListXML(HelloXML):
 
             # map names <-> ids
             # note that many batches may have the same name.
-            # Newer names are overridden with older names,
+            # Newer names override older names,
             # where 'newer' means 'higher id'
             names_to_batches = {}
             for entry in ids_to_batches.values():
                 name = entry["Name"]
-                id = entry['ID']
+                id = int(entry['ID'])
                 if name in names_to_batches:
-                    if id > names_to_batches[name]['ID']:
+                    if id > int(names_to_batches[name]['ID']):
                         names_to_batches[name] = entry
                 else:
                     names_to_batches[name] = entry

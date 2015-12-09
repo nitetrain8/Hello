@@ -22,10 +22,10 @@ from time import time as _time, sleep as _sleep
 __author__ = 'Nathan Starkweather'
 
 try:
-    from hello import HelloError, HelloApp, open_hello
+    from hello import HelloError, HelloApp, open_hello, TrueError
     from logger import BuiltinLogger
 except ImportError:
-    from hello.hello import HelloError, HelloApp, open_hello
+    from hello.hello import HelloError, HelloApp, open_hello, TrueError
     from hello.logger import BuiltinLogger
 
 
@@ -289,7 +289,7 @@ class _dbgmeta(type):
 
 
 class KLAAnalyzer():
-    def __init__(self, files=(), path='', savename="Compiled KLA Data"):
+    def __init__(self, files=(), savepath='', savename="Compiled KLA Data"):
 
         self._tests = []
         for file in files:
@@ -297,7 +297,7 @@ class KLAAnalyzer():
 
         self._xl, self._wb, self._ws, self._cells = xlObjs()
         self._ws.Name = "Data"
-        self._path = path or "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\"
+        self._path = savepath or "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\"
         if not self._path.endswith("\\"):
             self._path += "\\"
         self._ln_chart = None
@@ -313,6 +313,7 @@ class KLAAnalyzer():
         self._tests.append(test)
 
     def analyze_all(self):
+        makedirs(self._path, exist_ok=True)
         with HiddenXl(self._xl):
             self._init_linear_chart()
             self._init_ln_chart()
@@ -333,7 +334,11 @@ class KLAAnalyzer():
             self.save()
 
     def save(self):
-        self._wb.SaveAs(self._path + self._savename, AddToMru=True)
+        try:
+            self._wb.SaveAs(self._path + self._savename, AddToMru=True)
+        except:
+            import traceback
+            traceback.print_exc()
 
     def close(self):
         self._xl.Visible = True
@@ -415,7 +420,7 @@ class KLAAnalyzer():
         """
         print("Opening new worksheet")
         xl, wb, ws, cells = xlObjs(file, visible=False)
-        with HiddenXl(xl):
+        with HiddenXl(xl, True):
             # XXX what if cell not found?
             do_cell = cells.Find(What="DOPV(%)", After=cells(1, 1), SearchOrder=xlByRows)
             xcol = do_cell.Column + 1
@@ -430,12 +435,12 @@ class KLAAnalyzer():
             chart = CreateChart(ws, xlXYScatterLines)
             CreateDataSeries(chart, xrng, yrng, "KLA")
 
-            FormatChart(chart, None, chart_name, "Time(min)", "-LN(DO PV (%))", True)
+            FormatChart(chart, None, chart_name, "Time(hour)", "-LN(DO PV (%))", True)
             chart.Location(1)
 
-            # file should always be csv, but be generic just in case.
             save_name = file.replace(file[file.rfind("."):], '.xlsx')
-            wb.SaveAs(save_name, AddToMru=True)
+            wb.SaveAs(save_name, AddToMru=False)
+            wb.SaveAs(self._path + path_split(save_name)[1], AddToMru=True)
 
         return save_name
 
@@ -472,14 +477,18 @@ class KLAAnalyzer():
 
 class KLAReactorContext():
     def __init__(self, air_mfc_max, n2_mfc_max, o2_mfc_max,
-                 co2_mfc_max, co2_min_flow, main_gas_max, vessel_capacity, is_mag):
+                 co2_mfc_max, co2_min_flow, main_gas_max, vessel_capacity, is_mag, o2_min_flow_time):
         """
+
         @param air_mfc_max: air mfc max in L/min
         @param n2_mfc_max: n2 mfc max in L/min
         @param o2_mfc_max: o2 mfc max in L/min
         @param co2_mfc_max: co2 mfc max in L/min
+        @param co2_min_flow: co2 mfc min in L/min
         @param main_gas_max: main gas manual max (highest of above values)
         @param vessel_capacity: total capacity of vessel (eg, 4L for 3L, 100L for 80L...)
+        @param is_mag: 1 if doing air test on mag drive unit, 0 if air on air drive.
+        @param o2_min_flow_time: time to wait for o2 to ramp up, in seconds
 
         POD class: parameters for reactor configuration
         """
@@ -491,6 +500,7 @@ class KLAReactorContext():
         self.main_gas_max = main_gas_max
         self.vessel_capacity = vessel_capacity
         self.is_mag = is_mag
+        self.o2_min_flow_time = o2_min_flow_time
 
     def __repr__(self):
         return "KLAReactorContext: %.1f LPM Air MFC, %.1f LPM N2 MFC, %.1f LPM CO2 MFC, %.1f LPM O2 MFC," \
@@ -505,11 +515,11 @@ class KLATestContext():
     Test parameters for the test itself.
     Includes filename info, etc.
     """
-    def __init__(self, test_time, headspace_purge_factor, do_start_target, docroot=_docroot):
+    def __init__(self, test_time, headspace_purge_factor, do_start_target, savedir=_docroot):
         self.test_time = test_time
         self.hs_purge_factor = headspace_purge_factor
         self.do_start_target = do_start_target
-        self.docroot = docroot
+        self.savedir = savedir
 
     def generate_filename(self, name):
         """
@@ -517,7 +527,7 @@ class KLATestContext():
         Default impl based on current date.
         Override for custom behavior if desired.
         """
-        dirname = "%s%s%s\\" % (self.docroot, "kla",
+        dirname = "%s%s%s\\" % (self.savedir, "kla",
                                 datetime.now().strftime("%m-%d-%y"))
         makedirs(dirname, exist_ok=True)
         filename = dirname + name + ".csv"
@@ -529,7 +539,7 @@ class KLATestContext():
                (self.test_time, self.hs_purge_factor, self.do_start_target)
 
 
-pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1)
+pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
 _default_r_ctx = pbs_3L_ctx
 _default_t_ctx = KLATestContext(7, 5, 10)
 
@@ -568,7 +578,7 @@ class AirKLATestRunner():
         self.tests_run.append(t)
 
     def pickle_completed(self):
-        pkl_file = self.test_ctx.docroot + "klapickle\\airklatestpikle.pkl"
+        pkl_file = self.test_ctx.savedir + "klapickle\\airklatestpikle.pkl"
         safe_pickle(self.tests_run, pkl_file)
 
     def add_test(self, test):
@@ -589,9 +599,19 @@ class AirKLATestRunner():
         t = self.tests_pending.pop()
         self.tests_skipped.append(t)
 
+        self.app.login()
+        if self.reactor_ctx.is_mag:
+            self.app.setmg(2, 0)
+        else:
+            self.app.setag(2, 0)
+        self.app.setph(2, 0, 0)
+        self.app.setdo(2, 0, 0)
+        self.app.logout()
+
     def run_once(self):
         self.ntests_run += 1
         t = self.tests_to_run.pop()
+        print("-------------------------------------------")
         print("Test #%d starting: %s" % (self.ntests_run, t.get_info()))
         self.tests_pending.append(t)
         try:
@@ -614,6 +634,8 @@ class AirKLATestRunner():
         self.tests_to_run.reverse()
         while self.tests_to_run:
             self.run_once()
+        for t in self.tests_skipped:
+            print(t.get_info())
 
 
 class AirKLATest():
@@ -696,14 +718,12 @@ class AirKLATest():
         while True:
             do_pv = self.app.getdopv()
             if do_pv < self.test_ctx.do_start_target:
-                self.print("")
                 return True
             if _time() > end:
-                self.print("")
                 return False
             _sleep((end - _time()) % update_interval)
             self.print("\r                                               ", end='')
-            self.print("\rDO PV: %.1f%%" % do_pv, end='')
+            self.print("\rDO PV: %.1f%% / %.1f%%" % (do_pv, self.test_ctx.do_start_target), end='')
         return True
 
     def _set_do_rampup(self):
@@ -752,6 +772,7 @@ class AirKLATest():
                 self.set_gas(1, self.reactor_ctx.main_gas_max)
 
                 if not self._poll_do_setup(60 * 30):
+                    self.print("")
                     raise SkipTest("Setup timeout waiting for DO PV < %d%%" % self.test_ctx.do_start_target)
 
                 self.print("")
@@ -801,14 +822,19 @@ class AirKLATest():
 
         if self.app.batchrunning():
             self.app.endbatch()
-        self.app.startbatch(self.name)
 
         self.app.setph(2, 0, 0)
         self.app.setdo(1, 0, self.micro_sp)
         self.set_gas(1, self.main_sp)
 
+        self.print("Sleeping %d seconds for O2 rampup" % self.reactor_ctx.o2_min_flow_time)
+        _sleep(self.reactor_ctx.o2_min_flow_time)
+
+        self.app.startbatch(self.name)
+        self.app.logout()
+
         end = _time() + self.test_ctx.test_time * 60
-        update_interval = 15
+        update_interval = 5
         while True:
             left = max(end - _time(), 0)
             if left < update_interval:
@@ -816,20 +842,42 @@ class AirKLATest():
                 break
             self.print("\r                                                          ", end="")
             self.print("\rExperiment running: %s seconds left. DO PV: %.1f%%" %
-                       (int(end - _time()), self.app.getdopv()), end="")
-            _sleep(left % 15)
+                       (int(end - _time() + 1), self.app.getdopv()), end="")
+            _sleep(left % update_interval)
 
         self.print("")
         self.app.login()
-        self.app.endbatch()
 
         self.set_gas(2, 0)
         self.app.setdo(2, 0)
+        self.app.endbatch()
+
+    def _try_getreport(self, n, max_tries=20):
+        batch = None  # pycharm
+        while True:
+            self.app.login()
+            self.print("\rAttempting to download report: Attempt #%d of %d              "
+                       % (n, max_tries))
+            try:
+                batch = self.app.getdatareport_bybatchname(self.name)
+            except TrueError:
+                if n > max_tries:
+                    raise
+                try:
+                    self.app.logout()
+                except HelloError:
+                    pass
+                self.app.reconnect()
+                n += 1
+            else:
+                break
+        return batch
 
     def post_experiment(self):
 
-        self.app.login()
-        b = self.app.getdatareport_bybatchname(self.name)
+        n = 1
+        max_tries = 20
+        b = self._try_getreport(n, max_tries)
 
         filename = self.test_ctx.generate_filename(self.name)
         with open(filename, 'wb') as f:
@@ -853,7 +901,7 @@ def __test_analyze_kla():
 
 def __test_airkla():
 
-    rc = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1)
+    rc = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
     tc = KLATestContext(7, 5, 5)
 
     r = AirKLATestRunner("71.189.82.196:6", rc, tc)
