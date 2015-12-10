@@ -6,7 +6,7 @@ Created in: PyCharm Community Edition
 
 
 """
-from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatterLines
+from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatterLines, xlOpenXMLWorkbook
 from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSeries, HiddenXl, AddTrendlines
 from officelib.xllib.xladdress import chart_range_strs, cellStr, cellRangeStr
 from pysrc.snippets import safe_pickle, unique_name
@@ -292,6 +292,7 @@ class KLAAnalyzer():
     def __init__(self, files=(), savepath='', savename="Compiled KLA Data"):
 
         self._tests = []
+        files = files or ()
         for file in files:
             self.add_file(file)
 
@@ -329,6 +330,8 @@ class KLAAnalyzer():
                 try:
                     AddTrendlines(chart)
                 except:
+                    import traceback
+                    traceback.print_exc()
                     print("Couldn't add trendlines")
 
             self.save()
@@ -377,6 +380,85 @@ class KLAAnalyzer():
         FormatChart(chart, None, "KLA Data (compiled, -LN(100-DOPV))", "Time(hr)", "-LN(100-DOPV)")
         self._ln_chart = chart
 
+    def _make_named_ranges(self, wb, ws, cells, end_row, date_col):
+
+        """
+        x_col     y_col
+        start_row
+        end_row
+        x_range   y_range
+        """
+
+
+        x_col_start_cell = cellStr(3, date_col + 1, 1, 1)
+        lin_col_start_cell = cellStr(3, date_col + 2, 1, 1)
+        ln_col_start_cell = cellStr(3, date_col + 3, 1, 1)
+        start_row = 3
+
+        x_col_str =     cellStr(2, date_col + 4, 1, 1)
+        y_col_str =     cellStr(2, date_col + 5, 1, 1)
+        start_row_str = cellStr(3, date_col + 4, 1, 1)
+        end_row_str =   cellStr(4, date_col + 4, 1, 1)
+
+        x_range = '=%s&%s&":"&%s&%s' % (x_col_str, start_row_str,
+                                        x_col_str, end_row_str)
+        y_range = '=%s&%s&":"&%s&%s' % (y_col_str, start_row_str,
+                                        y_col_str, end_row_str)
+
+        cells(2, date_col + 4).Value = cellStr(1, date_col + 1).replace("1", "")
+        cells(2, date_col + 5).Value = cellStr(1, date_col + 3).replace("1", "")
+        cells(3, date_col + 4).Value = start_row
+        cells(4, date_col + 4).Value = end_row
+        cells(5, date_col + 4).Value = x_range
+        cells(5, date_col + 5).Value = y_range
+
+        # build name & formula for named range. this is obnoxious.
+        # bob = x named range, fred = y named range
+
+        name_x = "__%d_x_%s"
+        name_y = "__%d_y_%s"
+        bob_name_ln = name_x % (date_col, "ln")
+        fred_name_ln = name_y % (date_col, "ln")
+        bob_name_lin = name_x % (date_col, "lin")
+        fred_name_lin = name_y % (date_col, "lin")
+
+        book_name = wb.Name
+        sheet_name = "'%s'!" % ws.Name
+
+        # offset(ref, rows, cols)
+        named_range_formula = "=offset(%s%s,%s%s-%d,0):" \
+                               "offset(%s%s,%s%s-%d,0)"
+
+        bob_formula_ln = named_range_formula % (sheet_name, x_col_start_cell,
+                                        sheet_name, start_row_str, start_row,
+                                        sheet_name, x_col_start_cell,
+                                        sheet_name, end_row_str, start_row)
+        fred_formula_ln = named_range_formula % (sheet_name, ln_col_start_cell,
+                                                  sheet_name, start_row_str, start_row,
+                                                  sheet_name, ln_col_start_cell,
+                                                  sheet_name, end_row_str, start_row)
+        bob_formula_lin = bob_formula_ln
+
+        fred_formula_lin = named_range_formula % (sheet_name, lin_col_start_cell,
+                                             sheet_name, start_row_str, start_row,
+                                             sheet_name, lin_col_start_cell,
+                                             sheet_name, end_row_str, start_row)
+
+        Add = wb.Names.Add
+        Add(bob_name_ln, bob_formula_ln)
+        Add(fred_name_ln, fred_formula_ln)
+        Add(bob_name_lin, bob_formula_lin)
+        Add(fred_name_lin, fred_formula_lin)
+
+        chart_form = "='%s'!%%s" % book_name
+        bob_chart_ln_form = chart_form % bob_name_ln
+        fred_chart_ln_form = chart_form % fred_name_ln
+        bob_chart_lin_form = chart_form % bob_name_lin
+        fred_chart_lin_form = chart_form % fred_name_lin
+
+        return bob_chart_ln_form, fred_chart_ln_form, bob_chart_lin_form, \
+               fred_chart_lin_form
+
     def add_to_compiled(self, file, series_name):
         xl, wb, ws, cells = xlObjs(file, visible=False)
 
@@ -397,21 +479,25 @@ class KLAAnalyzer():
             self._cells(2, self._current_col + 1).Value = "Elapsed Time"
             self._cells(2, self._current_col + 3).Value = "-LN(100-DOPV)"
 
+            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(self._wb, self._ws, self._cells, fbottom,
+                                                               self._current_col)
+            series_name = ("='%s'!" % self._ws.Name) + cellStr(1, self._current_col)
+
             # add LN chart
             if self._ln_chart is None:
                 self._init_ln_chart()
             chart = self._ln_chart
-            xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 3, 3, fbottom + 1, self._ws.Name)
-            CreateDataSeries(chart, xrng, yrng, series_name)
+            # xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 3, 3, fbottom + 1, self._ws.Name)
+            CreateDataSeries(chart, ln_x, ln_y, series_name)
 
             # add linear chart
             if self._linear_chart is None:
                 self._init_linear_chart()
             chart = self._linear_chart
-            xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 2, 3, fbottom + 1, self._ws.Name)
-            CreateDataSeries(chart, xrng, yrng, series_name)
+            # xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 2, 3, fbottom + 1, self._ws.Name)
+            CreateDataSeries(chart, lin_x, lin_y, series_name)
 
-        self._current_col += fright - fleft + 2
+        self._current_col += fright - fleft + 2 + 2  # +2 space, + 2 regression columns
 
     def process_csv(self, file, chart_name="KLA"):
         """
@@ -430,17 +516,23 @@ class KLAAnalyzer():
             self._insert_ln_col(ws, cells, xcol + 2)
 
             print("Creating data plot")
+
+            # XXX possible in one call?
+            ws.Columns(xcol + 3).Insert(Shift=xlToRight)
+            ws.Columns(xcol + 3).Insert(Shift=xlToRight)
+
+            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(wb, ws, cells, end_row, xcol)
             # ln v time for specific chart
             xrng, yrng = chart_range_strs(xcol, xcol + 2, 2, end_row, ws.Name)
             chart = CreateChart(ws, xlXYScatterLines)
             CreateDataSeries(chart, xrng, yrng, "KLA")
 
             FormatChart(chart, None, chart_name, "Time(hour)", "-LN(DO PV (%))", True)
-            chart.Location(1)
+            # chart.Location(1)
 
             save_name = file.replace(file[file.rfind("."):], '.xlsx')
-            wb.SaveAs(save_name, AddToMru=False)
-            wb.SaveAs(self._path + path_split(save_name)[1], AddToMru=True)
+            # wb.SaveAs(save_name, AddToMru=False)
+            wb.SaveAs(self._path + path_split(save_name)[1], AddToMru=False, FileFormat=xlOpenXMLWorkbook)
 
         return save_name
 
@@ -477,7 +569,8 @@ class KLAAnalyzer():
 
 class KLAReactorContext():
     def __init__(self, air_mfc_max, n2_mfc_max, o2_mfc_max,
-                 co2_mfc_max, co2_min_flow, main_gas_max, vessel_capacity, is_mag, o2_min_flow_time):
+                 co2_mfc_max, co2_min_flow, main_gas_max, vessel_capacity, is_mag, o2_min_flow_time,
+                 o2_tubing_volume, o2_mfc_min):
         """
 
         @param air_mfc_max: air mfc max in L/min
@@ -501,6 +594,8 @@ class KLAReactorContext():
         self.vessel_capacity = vessel_capacity
         self.is_mag = is_mag
         self.o2_min_flow_time = o2_min_flow_time
+        self.o2_tubing_volume = o2_tubing_volume
+        self.o2_mfc_min = o2_mfc_min
 
     def __repr__(self):
         return "KLAReactorContext: %.1f LPM Air MFC, %.1f LPM N2 MFC, %.1f LPM CO2 MFC, %.1f LPM O2 MFC," \
@@ -539,7 +634,7 @@ class KLATestContext():
                (self.test_time, self.hs_purge_factor, self.do_start_target)
 
 
-pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
+pbs_3L_ctx = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
 _default_r_ctx = pbs_3L_ctx
 _default_t_ctx = KLATestContext(7, 5, 10)
 
@@ -556,6 +651,9 @@ class AirKLATestRunner():
         self.tests_pending = []
         self.ntests_run = 0
 
+        self.logger = BuiltinLogger(self.__class__.__name__ + datetime.now().strftime("%m-%d-%Y %H-%M"))
+        self.logger.handlers.pop(0)  # XXX bad practice
+
         if reactor_ctx is None:
             reactor_ctx = _default_r_ctx
         if test_ctx is None:
@@ -563,6 +661,13 @@ class AirKLATestRunner():
 
         self.reactor_ctx = reactor_ctx
         self.test_ctx = test_ctx
+
+    def print(self, *args, **kwargs):
+        print(*args, **kwargs)
+
+        msg = kwargs.get("sep", " ").join(args).replace("\r", "")
+        if msg:
+            self.logger.info(msg)
 
     def import_batch(self, batchname):
         self.app.login()
@@ -585,6 +690,7 @@ class AirKLATestRunner():
         """
         @type test: AirKLATest
         """
+        test.print = self.print
         self.tests_to_run.append(test)
 
     def create_test(self, main_sp, micro_sp, volume, name):
@@ -634,8 +740,12 @@ class AirKLATestRunner():
         self.tests_to_run.reverse()
         while self.tests_to_run:
             self.run_once()
-        for t in self.tests_skipped:
-            print(t.get_info())
+
+        if self.tests_skipped:
+            print("------------------------")
+            print("Skipped tests:")
+            for t in self.tests_skipped:
+                print(t.get_info())
 
 
 class AirKLATest():
@@ -777,6 +887,20 @@ class AirKLATest():
 
                 self.print("")
 
+        # subtlety in this test setup- at this point, main and micro
+        # gas lines are both full of nitrogen. The main gas line is
+        # purged during headspace purge, but the N2 from micro
+        # gas line will come out during experiment and cause problems.
+        # so we have to clear that gas and then finish the bringdown with
+        # main gas N2 only.
+        self.app.login()
+        o2_purge_time = self.reactor_ctx.o2_tubing_volume / self.reactor_ctx.o2_mfc_min
+        self.app.setdo(1, 0, self.reactor_ctx.o2_mfc_min)
+        self.print("Beginning micro gas line purge %d second sleep" % int(o2_purge_time * 60))
+        _sleep(o2_purge_time * 60)
+        self.app.setdo(2, 0, 0)
+        self._poll_do_setup(60 * 10)
+
         # post setup- all controllers off.
         self.app.login()
         self.app.setph(2, 0, 0)
@@ -835,14 +959,20 @@ class AirKLATest():
 
         end = _time() + self.test_ctx.test_time * 60
         update_interval = 5
+        dopv = 0.0
         while True:
             left = max(end - _time(), 0)
             if left < update_interval:
                 _sleep(left)
+                assert _time() >= end
                 break
             self.print("\r                                                          ", end="")
+            try:
+                dopv = self.app.getdopv()
+            except:
+                pass
             self.print("\rExperiment running: %s seconds left. DO PV: %.1f%%" %
-                       (int(end - _time() + 1), self.app.getdopv()), end="")
+                       (int(end - _time() + 1), dopv), end="")
             _sleep(left % update_interval)
 
         self.print("")
@@ -894,6 +1024,8 @@ class AirKLATest():
 
 def __test_analyze_kla():
 
+    import subprocess
+    subprocess.call("tskill.exe excel")
     test_dir = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\test\\"
     file = test_dir + "kla0-10-200 id-35 27-10-14.csv"
     KLAAnalyzer((file,)).analyze_all()
@@ -901,7 +1033,7 @@ def __test_analyze_kla():
 
 def __test_airkla():
 
-    rc = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
+    rc = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
     tc = KLATestContext(7, 5, 5)
 
     r = AirKLATestRunner("71.189.82.196:6", rc, tc)
@@ -917,7 +1049,9 @@ def __test_airkla():
 if __name__ == '__main__':
     # test = MechKLATest('192.168.1.6')
     # test.setup()
-    r = __test_airkla()
-    t = r.tests_to_run[0]
-    t.setup()
+    # r = __test_airkla()
+    # t = r.tests_to_run[0]
+    # t.setup()
+    __test_analyze_kla()
+    # pass
 

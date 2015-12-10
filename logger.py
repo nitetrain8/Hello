@@ -192,7 +192,7 @@ class BuiltinLogger(logging.Logger):
 
         for h in (h1, h2):
             self.addHandler(h)
-            h.setLevel(logging.DEBUG)
+            h.setLevel(level)
             h.setFormatter(f)
 
 

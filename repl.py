@@ -568,81 +568,81 @@
 #
 
 
-def kla_load_from_file():
-    """
-    for MIC-TR-2-008
-    """
-    try:
-        from hello import kla
-    except ImportError:
-        import kla
-
-    rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
-    tc = kla.KLATestContext(7, 5, 6)
-    # tc = kla.KLATestContext(1, 0.1, 20)
-    r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
-
-    filepath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
-    with open(filepath, 'r') as f:
-        f.readline()  # discard header
-
-        for line in f:
-            tno, tid, vol, maingas, microgas = line.split(",")
-            name = "kla t%s id%s" % (tno, tid)
-
-            if int(tid) == 26:
-                continue
-
-            print(tno, tid, vol, maingas, microgas.rstrip("\n"))
-            r.create_test(float(maingas), float(microgas), float(vol), name)
-
-    try:
-        r.run_all()
-    finally:
-        return r
-
-
-def analyze_kla_from_file():
-    """
-    for MIC-TR-2-008
-    """
-    try:
-        from hello import kla
-    except ImportError:
-        import kla
-    import os
-
-    path = "C:\\.replcache\\kla12-07-15"
-    files = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
-    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane"
-    a = kla.KLAAnalyzer((), savepath, "kla id27 compiled")
-    for file in files:
-        name = os.path.split(file)[1]
-        name = os.path.splitext(name)[0]
-        a.add_file(file, name)
-    a.analyze_all()
-
-
-def kla_load_from_file2():
-    """
-    for MIC-TR-2-008
-    """
-    try:
-        from hello import kla
-    except ImportError:
-        import kla
-
-    rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
-    tc = kla.KLATestContext(7, 5, 10)
-    r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
-
-    name1 = "kla t15 id27"
-    r.create_test(0.153, 500, 3, name1)
-    name2 = "kla t16 id27"
-    r.create_test(0.459, 0, 3, name2)
-    name3 = "kla t17 id27"
-    r.create_test(0.459, 60, 3, name3)
-    r.run_all()
+# def kla_load_from_file():
+#     """
+#     for MIC-TR-2-008
+#     """
+#     try:
+#         from hello import kla
+#     except ImportError:
+#         import kla
+#
+#     rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 25, 20)
+#     tc = kla.KLATestContext(7, 5, 6)
+#     # tc = kla.KLATestContext(1, 0.1, 20)
+#     r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
+#
+#     filepath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
+#     with open(filepath, 'r') as f:
+#         f.readline()  # discard header
+#
+#         for line in f:
+#             tno, tid, vol, maingas, microgas = line.split(",")
+#             name = "kla t%s id%s" % (tno, tid)
+#
+#             if int(tid) == 26:
+#                 continue
+#
+#             print(tno, tid, vol, maingas, microgas.rstrip("\n"))
+#             r.create_test(float(maingas), float(microgas), float(vol), name)
+#
+#     try:
+#         r.run_all()
+#     finally:
+#         return r
+#
+#
+# def analyze_kla_from_file():
+#     """
+#     for MIC-TR-2-008
+#     """
+#     try:
+#         from hello import kla
+#     except ImportError:
+#         import kla
+#     import os
+#
+#     path = "C:\\.replcache\\kla12-07-15"
+#     files = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
+#     savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane"
+#     a = kla.KLAAnalyzer((), savepath, "kla id27 compiled")
+#     for file in files:
+#         name = os.path.split(file)[1]
+#         name = os.path.splitext(name)[0]
+#         a.add_file(file, name)
+#     a.analyze_all()
+#
+#
+# def kla_load_from_file2():
+#     """
+#     for MIC-TR-2-008
+#     """
+#     try:
+#         from hello import kla
+#     except ImportError:
+#         import kla
+#
+#     rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
+#     tc = kla.KLATestContext(7, 5, 10)
+#     r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
+#
+#     name1 = "kla t15 id27"
+#     r.create_test(0.153, 500, 3, name1)
+#     name2 = "kla t16 id27"
+#     r.create_test(0.459, 0, 3, name2)
+#     name3 = "kla t17 id27"
+#     r.create_test(0.459, 60, 3, name3)
+#     r.run_all()
 
 
 def kla_load_from_file3():
@@ -654,8 +654,8 @@ def kla_load_from_file3():
     except ImportError:
         import kla
 
-    rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30)
-    tc = kla.KLATestContext(7, 5, 8)
+    rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
+    tc = kla.KLATestContext(7, 5, 5)
     # tc = kla.KLATestContext(1, 0.1, 20)
     r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
 
@@ -670,9 +670,9 @@ def kla_load_from_file3():
             if run.strip() != "x":
                 continue
 
-            print(tno, tid, vol, maingas, microgas.rstrip("\n"))
+            print(tno, tid, vol, maingas, microgas)
             r.create_test(float(maingas), float(microgas), float(vol), name)
-
+    r.tests_to_run.reverse()
     try:
         r.run_all()
     finally:
@@ -732,13 +732,47 @@ def analyze_kla_from_file2():
         print(name)
     a.analyze_all()
 
+
+def analyze_kla_from_file3():
+    """
+    for MIC-TR-2-008
+    """
+    try:
+        from hello import kla, hello
+    except ImportError:
+        import kla, hello
+    import os
+
+    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane"
+    a = kla.KLAAnalyzer(None, savepath, "kla id27 compiled")
+
+    path1 = "C:\\.replcache\\kla12-08-15"
+    path2 = "C:\\.replcache\\kla12-09-15"
+
+    testpath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
+    tests = {}
+    with open(testpath, 'r') as f:
+        f.readline()  # discard header
+
+        for line in f:
+            tno, tid, vol, maingas, microgas, run = line.split(",")
+            name = "kla t%s id%s" % (tno, tid)
+            tests[name] = "t%d %.3fLPM %dmLPM" % (int(tno), float(maingas), float(microgas))
+
+    for path in (path1, path2):
+        for file in os.listdir(path):
+            if os.path.isdir(file):
+                continue
+            name = file.replace(".csv", "")
+            a.add_file(os.path.join(path, file), tests[name])
+            print(name)
+    a.analyze_all()
+
+
 if __name__ == '__main__':
-    # from hello import HelloApp
-    # app = HelloApp("192.168.1.6")
-    # r = app.getDORAValues()
-    # print(r)
-    # power_curve_brushless("71.189.82.196:15")
+
     # kla_load_from_file()
-    analyze_kla_from_file2()
+    # analyze_kla_from_file2()
     # kla_load_from_file3()
+    analyze_kla_from_file3()
 
