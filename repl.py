@@ -655,8 +655,7 @@ def kla_load_from_file3():
         import kla
 
     rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
-    tc = kla.KLATestContext(7, 5, 5)
-    # tc = kla.KLATestContext(1, 0.1, 20)
+    tc = kla.KLATestContext(7, 5, 10)
     r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
 
     filepath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
@@ -672,7 +671,6 @@ def kla_load_from_file3():
 
             print(tno, tid, vol, maingas, microgas)
             r.create_test(float(maingas), float(microgas), float(vol), name)
-    r.tests_to_run.reverse()
     try:
         r.run_all()
     finally:
@@ -743,7 +741,7 @@ def analyze_kla_from_file3():
         import kla, hello
     import os
 
-    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane"
+    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 small membrane"
     a = kla.KLAAnalyzer(None, savepath, "kla id27 compiled")
 
     path1 = "C:\\.replcache\\kla12-08-15"
@@ -766,6 +764,44 @@ def analyze_kla_from_file3():
             name = file.replace(".csv", "")
             a.add_file(os.path.join(path, file), tests[name])
             print(name)
+
+    a.analyze_all()
+
+
+def analyze_kla_from_file4():
+    """
+    for MIC-TR-2-008
+    """
+    try:
+        from hello import kla, hello
+    except ImportError:
+        import kla
+        import hello
+    import os
+
+    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id26 med membrane"
+    a = kla.KLAAnalyzer(None, savepath, "kla id26 compiled")
+
+    path1 = "C:\\.replcache\\kla12-11-15"
+    # path2 = "C:\\.replcache\\kla12-14-15"
+
+    testpath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
+    tests = {}
+    with open(testpath, 'r') as f:
+        f.readline()  # discard header
+
+        for line in f:
+            tno, tid, vol, maingas, microgas, run = line.split(",")
+            name = "kla t%s id%s" % (tno, tid)
+            tests[name] = "t%d %.3fLPM %dmLPM" % (int(tno), float(maingas), float(microgas))
+
+    for path in (path1,):  # , path2):
+        for file in os.listdir(path):
+            if os.path.isdir(file):
+                continue
+            name = file.replace(".csv", "")
+            a.add_file(os.path.join(path, file), tests[name])
+            print(name)
     a.analyze_all()
 
 
@@ -773,6 +809,6 @@ if __name__ == '__main__':
 
     # kla_load_from_file()
     # analyze_kla_from_file2()
-    # kla_load_from_file3()
-    analyze_kla_from_file3()
-
+    # r = kla_load_from_file3()
+    # analyze_kla_from_file3()
+    analyze_kla_from_file4()

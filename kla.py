@@ -323,18 +323,17 @@ class KLAAnalyzer():
                 self.analyze_file(f.filename, f.name)
                 print()
 
+            # Uncomment to (attempt to) add trendlines.
+            # for chart in (self._ln_chart, self._linear_chart):
+            #     try:
+            #         AddTrendlines(chart)
+            #     except:
+            #         print("Couldn't add trendlines")
+
             self._linear_chart.Location(1, "Time v DOPV")
             self._ln_chart.Location(1, "Time v LN DOPV")
 
-            for chart in (self._ln_chart, self._linear_chart):
-                try:
-                    AddTrendlines(chart)
-                except:
-                    import traceback
-                    traceback.print_exc()
-                    print("Couldn't add trendlines")
-
-            self.save()
+        self.save()
 
     def save(self):
         try:
@@ -380,7 +379,7 @@ class KLAAnalyzer():
         FormatChart(chart, None, "KLA Data (compiled, -LN(100-DOPV))", "Time(hr)", "-LN(100-DOPV)")
         self._ln_chart = chart
 
-    def _make_named_ranges(self, wb, ws, cells, end_row, date_col):
+    def _make_named_ranges(self, wb, ws, cells, start_row, end_row, date_col):
 
         """
         x_col     y_col
@@ -389,11 +388,9 @@ class KLAAnalyzer():
         x_range   y_range
         """
 
-
-        x_col_start_cell = cellStr(3, date_col + 1, 1, 1)
-        lin_col_start_cell = cellStr(3, date_col + 2, 1, 1)
-        ln_col_start_cell = cellStr(3, date_col + 3, 1, 1)
-        start_row = 3
+        x_col_start_cell = cellStr(start_row, date_col + 1, 1, 1)
+        lin_col_start_cell = cellStr(start_row, date_col + 2, 1, 1)
+        ln_col_start_cell = cellStr(start_row, date_col + 3, 1, 1)
 
         x_col_str =     cellStr(2, date_col + 4, 1, 1)
         y_col_str =     cellStr(2, date_col + 5, 1, 1)
@@ -411,6 +408,7 @@ class KLAAnalyzer():
         cells(4, date_col + 4).Value = end_row
         cells(5, date_col + 4).Value = x_range
         cells(5, date_col + 5).Value = y_range
+        ws.Columns(date_col + 4).NumberFormat = "General"
 
         # build name & formula for named range. this is obnoxious.
         # bob = x named range, fred = y named range
@@ -463,10 +461,10 @@ class KLAAnalyzer():
         xl, wb, ws, cells = xlObjs(file, visible=False)
 
         # copy data to new ws
-        with HiddenXl(xl):
+        with HiddenXl(xl, True):
             do_cell = cells.Find("DOPV(%)", cells(1, 1), SearchOrder=xlByRows)
             fleft = do_cell.Column
-            fright = cells(2, fleft).End(xlToRight).Column
+            fright = fleft + 3
             fbottom = do_cell.End(xlDown).Row
 
             value = cells.Range(cells(1, fleft), cells(fbottom, fright)).Value
@@ -479,7 +477,7 @@ class KLAAnalyzer():
             self._cells(2, self._current_col + 1).Value = "Elapsed Time"
             self._cells(2, self._current_col + 3).Value = "-LN(100-DOPV)"
 
-            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(self._wb, self._ws, self._cells, fbottom,
+            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(self._wb, self._ws, self._cells, 3, fbottom + 1,
                                                                self._current_col)
             series_name = ("='%s'!" % self._ws.Name) + cellStr(1, self._current_col)
 
@@ -487,14 +485,12 @@ class KLAAnalyzer():
             if self._ln_chart is None:
                 self._init_ln_chart()
             chart = self._ln_chart
-            # xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 3, 3, fbottom + 1, self._ws.Name)
             CreateDataSeries(chart, ln_x, ln_y, series_name)
 
             # add linear chart
             if self._linear_chart is None:
                 self._init_linear_chart()
             chart = self._linear_chart
-            # xrng, yrng = chart_range_strs(self._current_col + 1, self._current_col + 2, 3, fbottom + 1, self._ws.Name)
             CreateDataSeries(chart, lin_x, lin_y, series_name)
 
         self._current_col += fright - fleft + 2 + 2  # +2 space, + 2 regression columns
@@ -521,16 +517,25 @@ class KLAAnalyzer():
             ws.Columns(xcol + 3).Insert(Shift=xlToRight)
             ws.Columns(xcol + 3).Insert(Shift=xlToRight)
 
-            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(wb, ws, cells, end_row, xcol)
-            # ln v time for specific chart
-            xrng, yrng = chart_range_strs(xcol, xcol + 2, 2, end_row, ws.Name)
-            chart = CreateChart(ws, xlXYScatterLines)
-            CreateDataSeries(chart, xrng, yrng, "KLA")
+            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(wb, ws, cells, 2, end_row, xcol - 1)
 
-            FormatChart(chart, None, chart_name, "Time(hour)", "-LN(DO PV (%))", True)
+            # ln v time for specific chart
+            chart = CreateChart(ws, xlXYScatterLines)
+            CreateDataSeries(chart, ln_x, ln_y)
+            FormatChart(chart, None, chart_name + "-LN(100-DOPV)", "Time(hour)", "-LN(DO PV (%))", True, False)
+
+            # do v time
+            chart2 = CreateChart(ws, xlXYScatterLines)
+            CreateDataSeries(chart2, lin_x, lin_y)
+            FormatChart(chart2, None, chart_name + "DO PV", "Time(hour)", "DO (%)", True, False)
+
+            # uncomment to move to move chart to new sheet
+            # xlLocationAsNewSheet = 1
             # chart.Location(1)
 
             save_name = file.replace(file[file.rfind("."):], '.xlsx')
+
+            # uncomment to save in raw data  folder
             # wb.SaveAs(save_name, AddToMru=False)
             wb.SaveAs(self._path + path_split(save_name)[1], AddToMru=False, FileFormat=xlOpenXMLWorkbook)
 
@@ -832,8 +837,8 @@ class AirKLATest():
             if _time() > end:
                 return False
             _sleep((end - _time()) % update_interval)
-            self.print("\r                                               ", end='')
-            self.print("\rDO PV: %.1f%% / %.1f%%" % (do_pv, self.test_ctx.do_start_target), end='')
+            # self.print("\r                                               ", end='')
+            self.print("\rDO PV: %.1f%% / %.1f%%                    " % (do_pv, self.test_ctx.do_start_target), end='')
         return True
 
     def _set_do_rampup(self):
@@ -897,8 +902,12 @@ class AirKLATest():
         o2_purge_time = self.reactor_ctx.o2_tubing_volume / self.reactor_ctx.o2_mfc_min
         self.app.setdo(1, 0, self.reactor_ctx.o2_mfc_min)
         self.print("Beginning micro gas line purge %d second sleep" % int(o2_purge_time * 60))
+        self.app.logout()
         _sleep(o2_purge_time * 60)
+
+        self.app.login()
         self.app.setdo(2, 0, 0)
+        self.app.logout()
         self._poll_do_setup(60 * 10)
 
         # post setup- all controllers off.
@@ -940,6 +949,33 @@ class AirKLATest():
         self.app.login()
         self.set_gas(2, 0)
 
+    def _begin_batch(self, max_tries=20):
+        """
+        Subroutine to ensure that batch is started
+        some issues have arisen with server calls
+        not being accepted.
+
+        Issue #1: startbatch not accepted.
+        Issue #2: ODBC database driver error or w/e
+        """
+        n = 1
+        while True:
+            self.print("\rAttempting to begin batch: Attempt #%d of %d              "
+                       % (n, max_tries))
+            try:
+                self.app.startbatch(self.name)
+            except HelloError:  # odbc error
+                pass
+            _sleep(1)
+            bn = self.app.getDORAValues()['Batch']
+            if bn.lower() == self.name.lower():
+                return
+            if n > max_tries:
+                raise SkipTest("Failed to start batch")
+            n += 1
+
+
+
     def experiment(self):
 
         self.app.login()
@@ -954,7 +990,7 @@ class AirKLATest():
         self.print("Sleeping %d seconds for O2 rampup" % self.reactor_ctx.o2_min_flow_time)
         _sleep(self.reactor_ctx.o2_min_flow_time)
 
-        self.app.startbatch(self.name)
+        self._begin_batch()
         self.app.logout()
 
         end = _time() + self.test_ctx.test_time * 60
