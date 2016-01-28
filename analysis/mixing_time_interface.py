@@ -8,103 +8,20 @@ Created in: PyCharm Community Edition
 """
 __author__ = 'Nathan Starkweather'
 
-import tkinter as tk
-import tkinter.ttk as ttk
-
 from hello.hello import HelloApp
-from hello import logger
+import tkinter as tk
+import pysrc.mytk as mytk
+from pysrc import logger
 
 _logger = logger.BuiltinLogger(__name__)
 _info = _logger.info
 _debug = _logger.debug
 
-
-class SimpleMenu(ttk.OptionMenu):
-    def __init__(self, master, command, initvalue, options):
-        self.var = tk.StringVar(None, initvalue)
-        ttk.OptionMenu.__init__(self, master, self.var, None, command=command, *options)
-
-    def get(self):
-        return self.var.get()
-
-    def grid(self, row, col, **kw):
-        ttk.OptionMenu.grid(self, row=row, column=col, **kw)
-
-
-class ItemButton(ttk.Button):
-    def __init__(self, master, name, cmd, **kw):
-        self.tv = tk.StringVar(None, name)
-        super().__init__(master, textvariable=self.tv, command=cmd, **kw)
-
-    def grid(self, row, col, **kwargs):
-        super().grid(row=row, column=col, **kwargs)
-
-
-class StatefulItemButton(ItemButton):
-    def __init__(self, master, name, initial_cmd):
-        super().__init__(master, name, self._do_cmd)
-        self._cmd = initial_cmd
-
-    def _do_cmd(self, *args, **kwargs):
-        self._cmd(*args, **kwargs)
-
-    def set_cmd(self, cmd):
-        self._cmd = cmd
-
-
-class SimpleEntryButton():
-    def __init__(self, root, frame_text, button_text, button_cmd):
-        self.frame = ttk.Frame(root)
-        self.label = ttk.Label(self.frame, text=frame_text)
-        self.entry_tv = tk.StringVar()
-        self.entry = ttk.Entry(self.frame, textvariable=self.entry_tv)
-        self.button = StatefulItemButton(self.frame, button_text, button_cmd)
-
-    def grid(self, row, col):
-        self.frame.grid(row=row, column=col, rowspan=2, sticky=tk.N)
-        self.entry.grid(row=1, column=1, columnspan=1)
-        self.button.grid(1, 2)
-        self.label.grid(row=0, column=1, sticky=tk.W)
-
-    def grid_forget(self):
-        for w in (self.frame, self.entry, self.button, self.label):
-            w.grid_forget()
-
-    def get_entry_text(self):
-        return self.entry_tv.get()
-
-
-class SimpleListbox():
-    def __init__(self, root, label_text):
-        self.frame = ttk.Frame(root)
-        self.label = ttk.Label(root, text=label_text)
-        self.listbox = tk.Listbox(root)
-
-    def grid(self, row, col):
-        _debug("Gridding")
-        self.frame.grid(row=row, column=col)
-        self.label.grid(row=0, column=0)
-        self.listbox.grid(row=1, column=0)
-
-    def grid_forget(self):
-        for w in (self.frame, self.label, self.listbox):
-            w.grid_forget()
-
-    def insert(self, index, items):
-        self.listbox.insert(index, *items)
-
-    def delete(self, first, last):
-        self.listbox.delete(first, last)
-
-    def clear(self):
-        self.delete(0, tk.END)
-
-
 class IPAddyFrameView():
     def __init__(self, root):
-        self.frame = ttk.LabelFrame(root, text="Open by IP Address")
-        self.batch_listbox = SimpleListbox(self.frame, "Batch List:")
-        self.gb_frame = SimpleEntryButton(self.frame, "Enter IP Address:", "get Batches!", self._do_gb_cb)
+        self.frame = mytk.SimpleLabelFrame(root, text="Open by IP Address")
+        self.batch_listbox = mytk.SimpleListbox(self.frame, "Batch List:")
+        self.gb_frame = mytk.SimpleEntryButton(self.frame, "Enter IP Address:", "get Batches!", self._do_gb_cb)
 
     def _do_gb_cb(self):
         self.getbatches_btn_cb()
@@ -176,17 +93,22 @@ class IPAddyFrameWidget():
 
 class FilenameFrameView():
     def __init__(self, root):
-        self.frame = ttk.LabelFrame(root)
-        self.listbox = SimpleListbox(self.frame, "Batch List:")
-        self.browse = StatefulItemButton(self.frame, "Browse", self.browse_btn_cb)
+        self.frame = mytk.SimpleFrame(root)
+        self.listbox = mytk.SimpleListbox(self.frame, "Batch List:")
+        self.browse = mytk.StatefulItemButton(self.frame, "Browse", self.browse_btn_cb)
 
     def browse_btn_cb(self):
-        pass  # hook
+        _debug("Unregistered %s callback called") % self.__class__.__name__  # hook
 
     def grid(self, row, col):
         self.frame.grid(row=row, column=col)
         self.listbox.grid(0, 0)
         self.browse.grid(2, 0, sticky=tk.E)
+
+    def grid_forget(self):
+        self.frame.grid_forget()
+        self.listbox.grid_forget()
+        self.browse.grid_forget()
 
 
 class FilenameFrameModel():
@@ -222,7 +144,7 @@ class MixingTimeInterface():
         }
         self.frames_to_names = {v: k for v, k in self.name_to_frames.items()}
 
-        self.menubutton = SimpleMenu(self.root, self.on_menu_change,
+        self.menubutton = mytk.SimpleMenu(self.root, self.on_menu_change,
                                      self.str_by_ip, [self.str_by_ip, self.str_by_fn])
         self.activate_frame(ip_frame)
         self.menubutton.grid(0, 0, sticky=tk.W)

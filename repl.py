@@ -656,7 +656,7 @@ def kla_load_from_file3():
 
     rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
     tc = kla.KLATestContext(7, 5, 10)
-    r = kla.AirKLATestRunner("71.189.82.196:6", rc, tc)
+    r = kla.AirKLATestRunner("192.168.1.6", rc, tc)
 
     filepath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
     with open(filepath, 'r') as f:
@@ -687,10 +687,14 @@ def analyze_kla_from_file2():
         import kla, hello
     import os
     import pysrc.snippets
+    import datetime
 
-    path = "C:\\.replcache\\kla12-08-15"
+    now = datetime.datetime.strftime("%m-%d-%y")
+    path = "C:\\.replcache\\kla" + now
+    os.makedirs(path, True)
     files2 = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
-    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane"
+    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane\\" + now + "\\"
+    os.makedirs(savepath, True)
     a = kla.KLAAnalyzer((), savepath, "kla id27 compiled")
 
     files = []
@@ -778,12 +782,18 @@ def analyze_kla_from_file4():
         import kla
         import hello
     import os
+    import pysrc.snippets
+    import datetime
 
-    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id26 med membrane"
-    a = kla.KLAAnalyzer(None, savepath, "kla id26 compiled")
+    now = datetime.datetime.now().strftime("%m-%d-%y")
+    path = "C:\\.replcache\\kla" + now
+    os.makedirs(path, True)
+    files2 = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
+    savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id26 med membrane\\" + now + "\\"
+    os.makedirs(savepath, True)
+    a = kla.KLAAnalyzer((), savepath, "kla id26 compiled " + now)
 
-    path1 = "C:\\.replcache\\kla12-11-15"
-    # path2 = "C:\\.replcache\\kla12-14-15"
+    path1 = "C:\\.replcache\\kla01-25-16"
 
     testpath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
     tests = {}
@@ -805,10 +815,9 @@ def analyze_kla_from_file4():
     a.analyze_all()
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and 'get_ipython' not in globals():
 
     # kla_load_from_file()
     # analyze_kla_from_file2()
-    # r = kla_load_from_file3()
-    # analyze_kla_from_file3()
-    analyze_kla_from_file4()
+    r = kla_load_from_file3()
+    # analyze_kla_from_file4()

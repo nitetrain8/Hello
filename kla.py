@@ -6,7 +6,8 @@ Created in: PyCharm Community Edition
 
 
 """
-from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatterLines, xlOpenXMLWorkbook
+from pbslib import pretty_date
+from officelib.const import xlToRight, xlByRows, xlDown, xlXYScatter, xlOpenXMLWorkbook
 from officelib.xllib.xlcom import CreateChart, FormatChart, xlObjs, CreateDataSeries, HiddenXl, AddTrendlines
 from officelib.xllib.xladdress import chart_range_strs, cellStr, cellRangeStr
 from pysrc.snippets import safe_pickle, unique_name
@@ -23,10 +24,10 @@ __author__ = 'Nathan Starkweather'
 
 try:
     from hello import HelloError, HelloApp, open_hello, TrueError
-    from logger import BuiltinLogger
 except ImportError:
     from hello.hello import HelloError, HelloApp, open_hello, TrueError
-    from hello.logger import BuiltinLogger
+    
+from pysrc.logger import BuiltinLogger
 
 
 _docroot = "C:\\.replcache\\"
@@ -288,6 +289,174 @@ class _dbgmeta(type):
         return type.__new__(mcs, name, bases, kwargs)
 
 
+class _SimpleAddress():
+    def __init__(self, row, col):
+        self.row = row
+        self.col = col
+        self.address = cellStr(row, col)
+        self.abs_address = cellStr(row, col, 1, 1)
+
+
+class _MakeNamedRanges():
+    """ The old "_make_named_ranges" function in KLAAnalyzer
+    was responsible for doing a lot of work and in the process
+    calculated a lot of important values.
+    
+    This class will attempt to take that functionality and
+    encapsulate it, to make the state more accessible to
+    KLAAnalyzer for re-use, and more flexible to use. 
+    
+    Storing all variables in state will also allow the function to
+    be broken down a bit to spread out the individual pieces.
+    
+    Make named ranges and insert cell values in two column
+        matrix in the following format:
+
+        [m_col_1]       [m_col_2]
+        x_col           y_col
+        start_row
+        end_row
+        x_range         y_range
+        "m"             "b"
+        m_form          b_form
+
+    This is done to enable dynamic named ranges in excel
+    controlled by numerical entries in the spreadsheet
+    itself.
+    """
+
+    def __init__(self, wb, ws, cells, start_row, end_row, date_col):
+        self.wb = wb
+        self.ws = ws
+        self.cells = cells
+        self.start_row = start_row
+        self.end_row = end_row
+        self.date_col = date_col
+        self.m_col_1 = date_col + 4
+        self.m_col_2 = date_col + 5
+
+        self.address_matrix = []
+        for col in range(2):
+            col_list = []
+            self.address_matrix.append(col_list)
+            for row in range(7):
+                col_list.append(_SimpleAddress(row + start_row, col + self.m_col_1))
+
+    def cell_addy(self, row, col, abs=False):
+        addy = self.address_matrix[col - self.m_col_1][row - self.start_row]
+        if abs:
+            return addy.abs_address
+        else:
+            return addy.address
+        
+    def close(self):
+        """ Release references """
+        self.wb = self.ws = self.cells = None
+
+    def get_ranges(self):
+        return self._make_named_ranges(self.wb, self.ws, self.cells, self.start_row, self.end_row, self.date_col)
+
+    def _make_named_ranges(self, wb, ws, cells, start_row, end_row, date_col):
+
+        # address range strings for first cell in x, f(x), and f(-ln(100-x)) columns
+        x_col_start_cell = cellStr(start_row, date_col + 1, 1, 1)
+        lin_col_start_cell = cellStr(start_row, date_col + 2, 1, 1)
+        ln_col_start_cell = cellStr(start_row, date_col + 3, 1, 1)
+
+        # address range strings for cells as in docstring matrix
+        x_col_str = cellStr(2, self.m_col_1, 1, 1)
+        y_col_str = cellStr(2, self.m_col_2, 1, 1)
+        start_row_str = cellStr(3, self.m_col_1, 1, 1)
+        end_row_str = cellStr(4, self.m_col_1, 1, 1)
+
+        # cell formulas for "x_range" and "y_range" in docstring matrix
+        #
+        x_range = '=%s&%s&":"&%s&%s' % (x_col_str, start_row_str,
+                                        x_col_str, end_row_str)
+        y_range = '=%s&%s&":"&%s&%s' % (y_col_str, start_row_str,
+                                        y_col_str, end_row_str)
+
+        # column letters
+        cells(2, self.m_col_1).Value = cellStr(1, date_col + 1).replace("1", "")
+        cells(2, self.m_col_2).Value = cellStr(1, date_col + 3).replace("1", "")
+
+        # start and end row for dynamic range
+        cells(3, self.m_col_1).Value = start_row
+        cells(4, self.m_col_1).Value = end_row
+
+        # x and y ranges
+        cells(5, self.m_col_1).Value = x_range
+        cells(5, self.m_col_2).Value = y_range
+        ws.Columns(self.m_col_1).NumberFormat = "General"
+
+        # m and b
+        cells(6, self.m_col_1).Value = "m"
+        cells(6, self.m_col_2).Value = "b"
+        cells(7, self.m_col_1).Value = "=index(linest(indirect(%s), indirect(%s)), 1)" \
+                                       % (cells(5, self.m_col_1).Address, cells(5, self.m_col_2).Address)
+        cells(7, self.m_col_2).Value = "=index(linest(indirect(%s), indirect(%s)), 2)" \
+                                       % (cells(5, self.m_col_1).Address, cells(5, self.m_col_2).Address)
+
+        # build name & formula for named range. this is obnoxious.
+        # for the sake of readability, I have named them bob and fred.
+        # bob = x named range, fred = y named range
+        name_x = "__%d_x_%s"
+        name_y = "__%d_y_%s"
+        bob_name_ln = name_x % (date_col, "ln")
+        fred_name_ln = name_y % (date_col, "ln")
+        bob_name_lin = name_x % (date_col, "lin")
+        fred_name_lin = name_y % (date_col, "lin")
+
+        book_name = wb.Name
+        sheet_name = "'%s'!" % ws.Name
+
+        # offset(ref, rows, cols)
+        #
+        # Dynamic named ranges worth with the offset formula,
+        # but not with the indirect formula (which would make this
+        # much easier to read).
+        #
+        # This formula translates the x_col, y_col, start row, and end_row
+        # into ranges which correspond to the formulas listed in
+        # x_range and y_range.
+        named_range_formula = "=offset(%s%s,%s%s-%d,0):" \
+                              "offset(%s%s,%s%s-%d,0)"
+
+        bob_formula_ln = named_range_formula % (sheet_name, x_col_start_cell,
+                                                sheet_name, start_row_str, start_row,
+                                                sheet_name, x_col_start_cell,
+                                                sheet_name, end_row_str, start_row)
+
+        fred_formula_ln = named_range_formula % (sheet_name, ln_col_start_cell,
+                                                 sheet_name, start_row_str, start_row,
+                                                 sheet_name, ln_col_start_cell,
+                                                 sheet_name, end_row_str, start_row)
+
+        # x column is the same for both formulas
+        bob_formula_lin = bob_formula_ln
+
+        fred_formula_lin = named_range_formula % (sheet_name, lin_col_start_cell,
+                                                  sheet_name, start_row_str, start_row,
+                                                  sheet_name, lin_col_start_cell,
+                                                  sheet_name, end_row_str, start_row)
+
+        add_name = wb.Names.Add
+        add_name(bob_name_ln, bob_formula_ln)
+        add_name(fred_name_ln, fred_formula_ln)
+        add_name(bob_name_lin, bob_formula_lin)
+        add_name(fred_name_lin, fred_formula_lin)
+
+        # these are exported for use in chart data series address strings
+        chart_form = "='%s'!%%s" % book_name
+        bob_chart_ln_form = chart_form % bob_name_ln
+        fred_chart_ln_form = chart_form % fred_name_ln
+        bob_chart_lin_form = chart_form % bob_name_lin
+        fred_chart_lin_form = chart_form % fred_name_lin
+
+        return bob_chart_ln_form, fred_chart_ln_form, bob_chart_lin_form, \
+               fred_chart_lin_form
+
+
 class KLAAnalyzer():
     def __init__(self, files=(), savepath='', savename="Compiled KLA Data"):
 
@@ -298,7 +467,7 @@ class KLAAnalyzer():
 
         self._xl, self._wb, self._ws, self._cells = xlObjs()
         self._ws.Name = "Data"
-        self._path = savepath or "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\"
+        self._path = savepath or "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\" + pretty_date() + "\\"
         if not self._path.endswith("\\"):
             self._path += "\\"
         self._ln_chart = None
@@ -323,12 +492,11 @@ class KLAAnalyzer():
                 self.analyze_file(f.filename, f.name)
                 print()
 
-            # Uncomment to (attempt to) add trendlines.
-            # for chart in (self._ln_chart, self._linear_chart):
-            #     try:
-            #         AddTrendlines(chart)
-            #     except:
-            #         print("Couldn't add trendlines")
+            for chart in (self._ln_chart, self._linear_chart):
+                try:
+                    AddTrendlines(chart)
+                except:
+                    print("Couldn't add trendlines")
 
             self._linear_chart.Location(1, "Time v DOPV")
             self._ln_chart.Location(1, "Time v LN DOPV")
@@ -370,92 +538,14 @@ class KLAAnalyzer():
         self.add_to_compiled(xl_name, name)
 
     def _init_linear_chart(self):
-        chart = CreateChart(self._ws, xlXYScatterLines)
+        chart = CreateChart(self._ws, xlXYScatter)
         FormatChart(chart, None, "KLA Data (compiled)", "Time(hr)", "DOPV(%)")
         self._linear_chart = chart
 
     def _init_ln_chart(self):
-        chart = CreateChart(self._ws, xlXYScatterLines)
+        chart = CreateChart(self._ws, xlXYScatter)
         FormatChart(chart, None, "KLA Data (compiled, -LN(100-DOPV))", "Time(hr)", "-LN(100-DOPV)")
         self._ln_chart = chart
-
-    def _make_named_ranges(self, wb, ws, cells, start_row, end_row, date_col):
-
-        """
-        x_col     y_col
-        start_row
-        end_row
-        x_range   y_range
-        """
-
-        x_col_start_cell = cellStr(start_row, date_col + 1, 1, 1)
-        lin_col_start_cell = cellStr(start_row, date_col + 2, 1, 1)
-        ln_col_start_cell = cellStr(start_row, date_col + 3, 1, 1)
-
-        x_col_str =     cellStr(2, date_col + 4, 1, 1)
-        y_col_str =     cellStr(2, date_col + 5, 1, 1)
-        start_row_str = cellStr(3, date_col + 4, 1, 1)
-        end_row_str =   cellStr(4, date_col + 4, 1, 1)
-
-        x_range = '=%s&%s&":"&%s&%s' % (x_col_str, start_row_str,
-                                        x_col_str, end_row_str)
-        y_range = '=%s&%s&":"&%s&%s' % (y_col_str, start_row_str,
-                                        y_col_str, end_row_str)
-
-        cells(2, date_col + 4).Value = cellStr(1, date_col + 1).replace("1", "")
-        cells(2, date_col + 5).Value = cellStr(1, date_col + 3).replace("1", "")
-        cells(3, date_col + 4).Value = start_row
-        cells(4, date_col + 4).Value = end_row
-        cells(5, date_col + 4).Value = x_range
-        cells(5, date_col + 5).Value = y_range
-        ws.Columns(date_col + 4).NumberFormat = "General"
-
-        # build name & formula for named range. this is obnoxious.
-        # bob = x named range, fred = y named range
-
-        name_x = "__%d_x_%s"
-        name_y = "__%d_y_%s"
-        bob_name_ln = name_x % (date_col, "ln")
-        fred_name_ln = name_y % (date_col, "ln")
-        bob_name_lin = name_x % (date_col, "lin")
-        fred_name_lin = name_y % (date_col, "lin")
-
-        book_name = wb.Name
-        sheet_name = "'%s'!" % ws.Name
-
-        # offset(ref, rows, cols)
-        named_range_formula = "=offset(%s%s,%s%s-%d,0):" \
-                               "offset(%s%s,%s%s-%d,0)"
-
-        bob_formula_ln = named_range_formula % (sheet_name, x_col_start_cell,
-                                        sheet_name, start_row_str, start_row,
-                                        sheet_name, x_col_start_cell,
-                                        sheet_name, end_row_str, start_row)
-        fred_formula_ln = named_range_formula % (sheet_name, ln_col_start_cell,
-                                                  sheet_name, start_row_str, start_row,
-                                                  sheet_name, ln_col_start_cell,
-                                                  sheet_name, end_row_str, start_row)
-        bob_formula_lin = bob_formula_ln
-
-        fred_formula_lin = named_range_formula % (sheet_name, lin_col_start_cell,
-                                             sheet_name, start_row_str, start_row,
-                                             sheet_name, lin_col_start_cell,
-                                             sheet_name, end_row_str, start_row)
-
-        Add = wb.Names.Add
-        Add(bob_name_ln, bob_formula_ln)
-        Add(fred_name_ln, fred_formula_ln)
-        Add(bob_name_lin, bob_formula_lin)
-        Add(fred_name_lin, fred_formula_lin)
-
-        chart_form = "='%s'!%%s" % book_name
-        bob_chart_ln_form = chart_form % bob_name_ln
-        fred_chart_ln_form = chart_form % fred_name_ln
-        bob_chart_lin_form = chart_form % bob_name_lin
-        fred_chart_lin_form = chart_form % fred_name_lin
-
-        return bob_chart_ln_form, fred_chart_ln_form, bob_chart_lin_form, \
-               fred_chart_lin_form
 
     def add_to_compiled(self, file, series_name):
         xl, wb, ws, cells = xlObjs(file, visible=False)
@@ -477,8 +567,9 @@ class KLAAnalyzer():
             self._cells(2, self._current_col + 1).Value = "Elapsed Time"
             self._cells(2, self._current_col + 3).Value = "-LN(100-DOPV)"
 
-            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(self._wb, self._ws, self._cells, 3, fbottom + 1,
-                                                               self._current_col)
+            ln_x, ln_y, lin_x, lin_y = _MakeNamedRanges(self._wb, self._ws, self._cells, 3, fbottom + 1,
+                                                               self._current_col).get_ranges()
+            
             series_name = ("='%s'!" % self._ws.Name) + cellStr(1, self._current_col)
 
             # add LN chart
@@ -517,15 +608,15 @@ class KLAAnalyzer():
             ws.Columns(xcol + 3).Insert(Shift=xlToRight)
             ws.Columns(xcol + 3).Insert(Shift=xlToRight)
 
-            ln_x, ln_y, lin_x, lin_y = self._make_named_ranges(wb, ws, cells, 2, end_row, xcol - 1)
+            ln_x, ln_y, lin_x, lin_y = _MakeNamedRanges(wb, ws, cells, 2, end_row, xcol - 1).get_ranges()
 
             # ln v time for specific chart
-            chart = CreateChart(ws, xlXYScatterLines)
+            chart = CreateChart(ws, xlXYScatter)
             CreateDataSeries(chart, ln_x, ln_y)
             FormatChart(chart, None, chart_name + "-LN(100-DOPV)", "Time(hour)", "-LN(DO PV (%))", True, False)
 
             # do v time
-            chart2 = CreateChart(ws, xlXYScatterLines)
+            chart2 = CreateChart(ws, xlXYScatter)
             CreateDataSeries(chart2, lin_x, lin_y)
             FormatChart(chart2, None, chart_name + "DO PV", "Time(hour)", "DO (%)", True, False)
 
@@ -537,6 +628,7 @@ class KLAAnalyzer():
 
             # uncomment to save in raw data  folder
             # wb.SaveAs(save_name, AddToMru=False)
+            
             wb.SaveAs(self._path + path_split(save_name)[1], AddToMru=False, FileFormat=xlOpenXMLWorkbook)
 
         return save_name
@@ -699,9 +791,6 @@ class AirKLATestRunner():
         self.tests_to_run.append(test)
 
     def create_test(self, main_sp, micro_sp, volume, name):
-        # def create_test(a, b, c...)
-        # t = AirKLATest(a, b, c...)
-        # self.tests.append(t)
         t = AirKLATest(self.app, main_sp, micro_sp, volume, name, self.reactor_ctx, self.test_ctx)
         self.add_test(t)
         return t
@@ -722,13 +811,13 @@ class AirKLATestRunner():
     def run_once(self):
         self.ntests_run += 1
         t = self.tests_to_run.pop()
-        print("-------------------------------------------")
-        print("Test #%d starting: %s" % (self.ntests_run, t.get_info()))
+        self.print("-------------------------------------------")
+        self.print("Test #%d starting: %s" % (self.ntests_run, t.get_info()))
         self.tests_pending.append(t)
         try:
             t.run()
         except SkipTest as e:
-            print(e.args)
+            self.print(e.args)
             self.skip_current_test()
         except Exception:
             traceback.print_exc()
@@ -747,10 +836,10 @@ class AirKLATestRunner():
             self.run_once()
 
         if self.tests_skipped:
-            print("------------------------")
-            print("Skipped tests:")
+            self.print("------------------------")
+            self.print("Skipped tests:")
             for t in self.tests_skipped:
-                print(t.get_info())
+                self.print(t.get_info())
 
 
 class AirKLATest():
@@ -837,7 +926,6 @@ class AirKLATest():
             if _time() > end:
                 return False
             _sleep((end - _time()) % update_interval)
-            # self.print("\r                                               ", end='')
             self.print("\rDO PV: %.1f%% / %.1f%%                    " % (do_pv, self.test_ctx.do_start_target), end='')
         return True
 
@@ -850,7 +938,33 @@ class AirKLATest():
         self.app.setph(1, ph_pc, 0)
         self.app.setdo(1, do_pc, 0)
         self.set_gas(1, total)
+        
+    def _verify(self, used_ph_m, used_ph_sp,
+                      used_do_m, used_do_sp,
+                      used_gas_m, used_gas_sp):
 
+        mv = self.app.gpmv()
+
+        ph = mv['ph']
+        ph_m = ph['mode']
+        ph_sp = ph['manDown']
+
+        do = mv['do']
+        do_m = do['mode']
+        do_sp = do['manUp']
+
+        if self.reactor_ctx.is_mag:
+            gas = mv['maingas']
+        else:
+            gas = mv['agitation']
+
+        gas_m = gas['mode']
+        gas_sp = gas['man']
+
+        return all((ph_m == used_ph_m, ph_sp == used_ph_sp,
+                    do_m == used_do_m, do_sp == used_do_sp,
+                    gas_m == used_gas_m, gas_sp == used_gas_sp))
+            
     def setup(self):
         """
         Lower DO to < 10% using N2 from CO2 (micro)
@@ -974,8 +1088,6 @@ class AirKLATest():
                 raise SkipTest("Failed to start batch")
             n += 1
 
-
-
     def experiment(self):
 
         self.app.login()
@@ -1064,7 +1176,12 @@ def __test_analyze_kla():
     subprocess.call("tskill.exe excel")
     test_dir = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\PBS 3 mech wheel\\test\\"
     file = test_dir + "kla0-10-200 id-35 27-10-14.csv"
-    KLAAnalyzer((file,)).analyze_all()
+    test_save_dir = "C:\\.replcache\\__test_analyze_kla\\"
+
+    import shutil
+    shutil.rmtree(test_save_dir)
+
+    KLAAnalyzer((file,), test_save_dir).analyze_all()
 
 
 def __test_airkla():

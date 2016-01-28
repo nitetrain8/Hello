@@ -6,13 +6,15 @@ Created in: PyCharm Community Edition
 
 
 """
+
+
 __author__ = 'Nathan Starkweather'
 
 
 from officelib.xllib import xlcom, xladdress
 from officelib import const
 from hello.hello import HelloApp
-from hello.logger import BuiltinLogger, logging
+from pysrc.logger import BuiltinLogger, logging
 
 import tempfile
 import os
@@ -58,7 +60,7 @@ class CompiledMixingSaveAsInfo():
 
     def save_compiled(self, ct):
         filename = os.path.join(self.path, ct.name) + ".xlsx"
-        ct.wb.SaveAs(filename)
+        ct.wb.SaveAs(filename, FileFormat=const.xlOpenXMLWorkbook)
 
 
 class CompiledMixingTime():
@@ -110,8 +112,8 @@ class CompiledMixingTime():
     def save_test(self, mt):
         self.saveas_info.save_mt(mt)
 
-    def add_csv(self, csv):
-        mt = self._create_test_from_csv(csv)
+    def add_csv(self, csv, cvar='phARaw'):
+        mt = self._create_test_from_csv(csv, cvar)
         self.add_test(mt)
         return mt
 
@@ -134,8 +136,8 @@ class CompiledMixingTime():
     def add_test(self, test):
         self.tests.append(test)
 
-    def _create_test_from_csv(self, file):
-        return MixingTimeTest.from_csv(file, None, self.logger)
+    def _create_test_from_csv(self, file, cvar='phARaw'):
+        return MixingTimeTest.from_csv(file, None, self.logger, cvar)
 
     def from_csv_list(self, files):
         for file in files:
@@ -149,25 +151,31 @@ class CompiledMixingTime():
         chart_top_start = 30
         chart_left_padding = 5
         chart_top_padding = 5
+
         mt_ws = mixing_test.ws
         mt_chart_ob = mt_ws.ChartObjects(1)
         chart = mt_chart_ob.Chart
+
         chart.ChartArea.Copy()
         self.ws.Paste()
+
         chart_objs = self.ws.ChartObjects()
         chart_count = chart_objs.Count
         chart_obj = chart_objs(chart_count)
         chart_width = mt_chart_ob.Width
         chart_height = mt_chart_ob.Height
         chart_count -= 1
+
         chart_left = (chart_count % charts_per_row) * chart_width + \
                      (chart_count % charts_per_row) * chart_left_padding + chart_left_start
         chart_top = (chart_count // charts_per_row) * chart_height + \
                     (chart_count // charts_per_row) * chart_top_padding + chart_top_start
+
         chart_obj.Height = chart_height
         chart_obj.Width = chart_width
         chart_obj.Left = chart_left
         chart_obj.Top = chart_top
+
         xlcom.FormatChart(chart_obj.Chart, None, mixing_test.name)
 
     def add_to_compiled(self, mixing_test):
@@ -206,7 +214,7 @@ class MixingTimeTest():
         self.cv = conductivity_var
 
     @classmethod
-    def from_csv(cls, csv, name=None, logger=None):
+    def from_csv(cls, csv, name=None, logger=None, cvar='pHARaw'):
         """
         @param csv: filename of csv file
         @param logger: Logger
@@ -217,7 +225,7 @@ class MixingTimeTest():
         xl, wb = xlcom.xlBook2(csv)
         if name is None:
             name = _get_filename(csv)
-        return cls(name, xl, wb, logger)
+        return cls(name, xl, wb, logger, cvar)
 
     @classmethod
     def from_bytes(cls, report, name=None, logger=None):
@@ -433,8 +441,8 @@ def test_open_from_batchname():
 
 def M15_TR_005a_test():
     import re
-    from hello import logger
-    logger = logger.BuiltinLogger(__name__)
+
+    logger = BuiltinLogger(__name__)
 
     path = "C:\\.replcache\\mixing_time_raw\\"
     mixing_test_re = re.compile(r"mt (\d{1,2})\s*rpm (\d+)\.(\d+)")

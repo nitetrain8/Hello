@@ -21,6 +21,7 @@ from re import compile as re_compile
 from time import time
 import types
 import logging
+import ipaddress
 
 
 class BadError(Exception):
@@ -160,6 +161,8 @@ class BaseHelloApp():
         else:
             host = ipv4
             port = 80
+
+        host = str(ipaddress.IPv4Address(host))
         return host, port
 
     def _init_connection_fromipv4(self, ipv4):
