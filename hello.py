@@ -215,6 +215,10 @@ class BaseHelloApp():
         self._connection = self._init_connection(self._host, self._port)
         self._logger.name = self._calc_logger_name(ipv4)
 
+    @property
+    def ipv4(self):
+        return self._ipv4
+
     def request_from_call_and_args(self, call, args=()):
         """
         same as below, but 'call' is a separate argument

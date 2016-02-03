@@ -643,19 +643,18 @@
 #     name3 = "kla t17 id27"
 #     r.create_test(0.459, 60, 3, name3)
 #     r.run_all()
+from kla.analyzer import KLAAnalyzer
+from kla.runner import KLATestContext, KLAReactorContext
 
 
 def kla_load_from_file3():
     """
     for MIC-TR-2-008
     """
-    try:
-        from hello import kla
-    except ImportError:
-        import kla
+    from pbslib import kla
 
-    rc = kla.KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
-    tc = kla.KLATestContext(7, 5, 10)
+    rc = KLAReactorContext(0.5, 0.5, 0.5, 0.3, 0.02, 0.5, 4, 1, 30, 30, 20)
+    tc = KLATestContext(7, 5, 10)
     r = kla.AirKLATestRunner("192.168.1.6", rc, tc)
 
     filepath = "C:\\Users\\PBS Biotech\\Downloads\\MIC-TR-X-008a.csv"
@@ -682,11 +681,11 @@ def analyze_kla_from_file2():
     for MIC-TR-2-008
     """
     try:
-        from hello import kla, hello
+        from hello import hello
     except ImportError:
-        import kla, hello
+        import hello
+    from pbslib import kla
     import os
-    import pysrc.snippets
     import datetime
 
     now = datetime.datetime.strftime("%m-%d-%y")
@@ -695,7 +694,7 @@ def analyze_kla_from_file2():
     files2 = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
     savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 med membrane\\" + now + "\\"
     os.makedirs(savepath, True)
-    a = kla.KLAAnalyzer((), savepath, "kla id27 compiled")
+    a = KLAAnalyzer((), savepath, "kla id27 compiled")
 
     files = []
     for f in files2:
@@ -740,13 +739,14 @@ def analyze_kla_from_file3():
     for MIC-TR-2-008
     """
     try:
-        from hello import kla, hello
+        from hello import hello
     except ImportError:
-        import kla, hello
+        import hello
+    from pbslib import kla
     import os
 
     savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id27 small membrane"
-    a = kla.KLAAnalyzer(None, savepath, "kla id27 compiled")
+    a = KLAAnalyzer(None, savepath, "kla id27 compiled")
 
     path1 = "C:\\.replcache\\kla12-08-15"
     path2 = "C:\\.replcache\\kla12-09-15"
@@ -777,21 +777,20 @@ def analyze_kla_from_file4():
     for MIC-TR-2-008
     """
     try:
-        from hello import kla, hello
+        from hello import hello
     except ImportError:
-        import kla
         import hello
+    from pbslib import kla
     import os
-    import pysrc.snippets
     import datetime
 
     now = datetime.datetime.now().strftime("%m-%d-%y")
     path = "C:\\.replcache\\kla" + now
     os.makedirs(path, True)
-    files2 = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
+    # files2 = ["\\".join((path, f)) for f in os.listdir(path) if f.endswith(".csv")]
     savepath = "C:\\Users\\Public\\Documents\\PBSSS\\KLA Testing\\kla id26 med membrane\\" + now + "\\"
     os.makedirs(savepath, True)
-    a = kla.KLAAnalyzer((), savepath, "kla id26 compiled " + now)
+    a = KLAAnalyzer((), savepath, "kla id26 compiled " + now)
 
     path1 = "C:\\.replcache\\kla01-25-16"
 
