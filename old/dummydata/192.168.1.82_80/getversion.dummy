@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message><Cluster>
+<Name>Versions</Name>
+<NumElts>5</NumElts>
+<String>
+<Name>RIO</Name>
+<Val>V12.1</Val>
+</String>
+<String>
+<Name>Server</Name>
+<Val>V3.1</Val>
+</String>
+<String>
+<Name>Model</Name>
+<Val>PBS 15</Val>
+</String>
+<String>
+<Name>Database</Name>
+<Val>V2.2</Val>
+</String>
+<String>
+<Name>Serial Number</Name>
+<Val>0162B849</Val>
+</String>
+</Cluster></Message></Reply>

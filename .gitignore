@@ -19,6 +19,8 @@ lib
 lib64
 **/__pycache__
 **/.idea
+**/build_openssl
+**/labview
 
 # Installer logs
 pip-log.txt

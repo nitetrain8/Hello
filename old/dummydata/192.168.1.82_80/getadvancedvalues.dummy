@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message><Cluster>
+<Name>Advanced Values</Name>
+<NumElts>13</NumElts>
+<DBL>
+<Name>GasOut%</Name>
+<Val>0.70829954029592</Val>
+</DBL>
+<DBL>
+<Name>N2 Flow (%)</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>O2 Flow (%)</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>CondenserDuty</Name>
+<Val>50.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>Lq Duty (%)</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>CO2Duty(%)</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>MainHeatDuty(%)</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>MFCAirFlowFeedback(LPM)</Name>
+<Val>0.70771274566650</Val>
+</DBL>
+<DBL>
+<Name>MFCN2FlowFeedback(LPM)</Name>
+<Val>-2.74653911590576E-3</Val>
+</DBL>
+<DBL>
+<Name>MFCO2FlowFeedback(LPM)</Name>
+<Val>-1.81464195251465E-2</Val>
+</DBL>
+<DBL>
+<Name>MFCCO2FlowFeedback(LPM)</Name>
+<Val>-4.32486534118652E-3</Val>
+</DBL>
+<DBL>
+<Name>FilterOvenDutyUser(%)</Name>
+<Val>0.00000000000000</Val>
+</DBL>
+<DBL>
+<Name>FilterOvenSP(C)</Name>
+<Val>35.00000000000000</Val>
+</DBL>
+</Cluster></Message></Reply>

@@ -1,0 +1,66 @@
+{
+	"result": "True",
+	"message": {
+		"agitation": {
+			"pv": 1,
+			"sp": 2,
+			"man": 3,
+			"mode": 4,
+			"error": 5
+		},
+		"temperature": {
+			"pv": 46,
+			"sp": 47,
+			"man": 48,
+			"mode": 49,
+			"error": 50,
+			"interlocked": 51
+		},
+		"secondaryheat": {
+			"pv": 40,
+			"sp": 41,
+			"man": 44,
+			"mode": 45,
+			"error": 42,
+			"interlocked": 43
+		},
+		"do": {
+			"pv": 7,
+			"sp": 8,
+			"manUp": 10,
+			"manDown": 9,
+			"mode": 11,
+			"error": 12
+		},
+		"ph": {
+			"pv": 29,
+			"sp": 30,
+			"manUp": 34,
+			"manDown": 33,
+			"mode": 35,
+			"error": 31
+		},
+		"pressure": {
+			"pv": 36,
+			"mode": 39,
+			"error": 38
+		},
+		"level": {
+			"pv": 19,
+			"mode": 22,
+			"error": 21
+		},
+		"condenser": {
+			"pv": 14,
+			"mode": 17,
+			"error": 16
+		},
+		"maingas": {
+			"pv": 23,
+			"man": 27,
+			"mode": 28,
+			"error": 25,
+			"interlocked": 26
+		}
+	}
+}

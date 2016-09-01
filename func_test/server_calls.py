@@ -16,9 +16,11 @@ from os.path import dirname
 from json import loads as json_loads
 
 here = dirname(__file__)
-with open('\\'.join((here, 'ipaddys.txt')), 'r') as f:
-    ipaddys = f.read().splitlines()
-
+try:
+    with open('\\'.join((here, 'ipaddys.txt')), 'r') as f:
+        ipaddys = f.read().splitlines()
+except FileNotFoundError:
+    ipaddys = None
 if not ipaddys:
     ipaddys = ['192.168.1.6']
 

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message><Array>
+<Name>Batches (cluster)</Name>
+<Dimsize>1</Dimsize>
+<Cluster>
+<Name>Batch</Name>
+<NumElts>8</NumElts>
+<String>
+<Name>Name</Name>
+<Val>test</Val>
+</String>
+<String>
+<Name>Serial Number</Name>
+<Val/>
+</String>
+<String>
+<Name>User</Name>
+<Val>user1</Val>
+</String>
+<String>
+<Name>Start Time</Name>
+<Val>1421179062</Val>
+</String>
+<String>
+<Name>Stop Time</Name>
+<Val>1421179075</Val>
+</String>
+<String>
+<Name>Product Number</Name>
+<Val/>
+</String>
+<String>
+<Name>Rev</Name>
+<Val/>
+</String>
+<I32>
+<Name>ID</Name>
+<Val>2</Val>
+</I32>
+</Cluster>
+</Array></Message></Reply>

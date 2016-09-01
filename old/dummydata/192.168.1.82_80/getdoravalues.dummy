@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="windows-1252" standalone="no" ?><Reply><Result>True</Result><Message><Cluster>
+<Name/>
+<NumElts>5</NumElts>
+<String>
+<Name>Machine Name</Name>
+<Val>Unnamed</Val>
+</String>
+<String>
+<Name>Start Time</Name>
+<Val>--</Val>
+</String>
+<String>
+<Name>Elapsed</Name>
+<Val>--</Val>
+</String>
+<String>
+<Name>Batch</Name>
+<Val>--</Val>
+</String>
+<String>
+<Name>Sequence</Name>
+<Val>Idle</Val>
+</String>
+</Cluster></Message></Reply>

@@ -484,7 +484,7 @@ class HelloApp(BaseHelloApp):
         query = "?&call=getMainValues&json=true"
         rsp = self.send_request(query)
         mv = json_loads(rsp.read().decode('utf-8'))
-        return mv['message']
+        return mv
 
     # backward compatibility
     gmv = getMainValues

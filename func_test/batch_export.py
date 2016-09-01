@@ -14,7 +14,7 @@ import officelib.const
 from officelib.xllib import xlcom, xladdress
 
 
-_func_test_folder = "C:\\Users\\Public\Documents\\PBSSS\\Functional Testing"
+_func_test_folder = "\\\\PBSStation\\PBSCloudShare\\(4) Manufacturing & Operations\\Functional Testing"
 
 
 class BatchExporter():
@@ -57,7 +57,9 @@ class BatchExporter():
         if not self.app:
             raise ValueError("Error- no app!")
         self.app.login('pbstech', '727246')
+        print("Downloading File...")
         report = self.app.getdatareport_bybatchname(batch_name)
+        print("Analyzing File...")
         self.analyze(batch_name, report)
 
     def _do_xl_import(self, tmpname):
@@ -70,7 +72,7 @@ class BatchExporter():
             chart_name = "%s Batch Export" % self.reactor_name
 
             xlcom.CreateDataSeries(chart, xrng, yrng)
-            xlcom.FormatChart(chart, None, chart_name, "Date", "LevelPV")
+            xlcom.FormatChart(chart, None, chart_name, "Date", "LevelPV", Legend=False)
             chart.Location(officelib.const.xlLocationAsNewSheet)
 
 
