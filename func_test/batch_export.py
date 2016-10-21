@@ -15,7 +15,7 @@ from officelib.xllib import xlcom, xladdress
 
 
 _func_test_folder = "\\\\PBSStation\\PBSCloudShare\\(4) Manufacturing & Operations\\Functional Testing"
-
+_backup_folder = os.path.join(os.path.abspath(os.path.expanduser("~")), "Documents", "PBS", "Local Functional Testing")
 
 class BatchExporter():
     def __init__(self, ipv4, reactor_name, rsize):
@@ -23,6 +23,7 @@ class BatchExporter():
         self.reactor_name = reactor_name
         self.rsize = rsize
         if ipv4:
+            print("Connecting to ", ipv4, "...")
             self.app = HelloApp(ipv4)
         else:
             self.app = None
@@ -30,8 +31,13 @@ class BatchExporter():
     def _temp_unique_name(self, batch_name):
         i = ""
         n = 0
-        fname = ""  # stop pycharm complaining
-        path = os.path.join(_func_test_folder, self.rsize, self.reactor_name)
+        fname = ""
+        if os.path.exists(_func_test_folder):
+            folder = _func_test_folder
+        else:
+            folder = _backup_folder
+        path = os.path.join(folder, self.rsize, self.reactor_name)
+        os.makedirs(path, exist_ok=True)
         while True:
             fname = os.path.join(path, "%s%s%s" % (batch_name, i, ".csv"))
             if not os.path.exists(fname):

@@ -11,22 +11,22 @@ from other modules/ipython sessions/etc.
 Maybe turn into __init__.py?
 """
 from collections import OrderedDict
-from http.client import HTTPConnection, HTTPException
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
 
 __author__ = 'Nathan Starkweather'
 
 from xml.etree.ElementTree import XMLParser, XML as parse_xml
 from json import loads as json_loads
-from re import compile as re_compile
+import re
 from time import time
 import types
 import logging
 import ipaddress
-import socket
+import traceback
 
 
 class BadError(Exception):
-    """ Encompases all things bad. """
+    """ Encompasses all things bad. """
     pass
 
 
@@ -40,16 +40,8 @@ class ServerCallError(HelloError):
 
 
 class TrueError(ServerCallError):
-    """ Server was stupid and returned "True" on a Get call.
-    """
+    """ Server was stupid. """
 
-
-# class AuthError(ServerCallError):
-#     """ Authentication Error. Most likely due to
-#     failure to properly maintain state across multiple
-#     server calls.
-#     """
-#     pass
 AuthError = ServerCallError
 
 
@@ -58,7 +50,7 @@ class XMLError(HelloError):
     pass
 
 
-_sanitize = re_compile(r"([\s:%/])").sub
+_sanitize = re.compile(r"([\s:%/])").sub
 
 # todo: add all url substitution thingies.
 _sanitize_map = {
@@ -70,25 +62,23 @@ _sanitize_map = {
 
 
 def _sanitize_cb(m):
-    """
-    @type m: _sre.SRE_Match
-    """
     return _sanitize_map[m.group(0)]
 
 
-def sanitize_url(url, cb=_sanitize_cb):
-    return _sanitize(cb, url)
+def sanitize_url(url):
+    return _sanitize(_sanitize_cb, url)
 
 
-# noinspection PyProtectedMember, PyUnusedLocal
 def parse_rsp(rsp):
     parser = XMLParser()
-    if hasattr(parser, '_parse_whole'):
-        # The default XMLParser, when it comes from an accelerator,
-        # can define an internal _parse_whole API for efficiency.
-        # It can be used to parse the whole source without feeding
-        # it with chunks.
-        return parser._parse_whole(rsp)
+
+    # The default XMLParser, when it comes from an accelerator,
+    # can define an internal _parse_whole API for efficiency.
+    # It can be used to parse the whole source without feeding
+    # it with chunks.
+    parse_whole = getattr(parser, "_parse_whole")
+    if parse_whole:
+        return parse_whole(rsp)
 
     while True:
         data = rsp.read(65536)
@@ -105,16 +95,23 @@ def open_hello(app_or_ipv4):
         return HelloApp(app_or_ipv4)
 
 
-class LVWSHTTPConnection(HTTPConnection):
+class DoRequestMixin():
     def do_request(self, meth, url, body=None, headers=None):
         headers = headers or {}
         self.request(meth, url, body, headers)
         return self.getresponse()
 
 
+class LVWSHTTPConnection(DoRequestMixin, HTTPConnection):
+    pass
+
+
+class LVWSHTTPSConnection(DoRequestMixin, HTTPSConnection):
+    pass
+
+
 class BaseHelloApp():
     _headers = {}
-    _url_template = "http://%s/webservice/interface/"
 
     def __init__(self, ipv4, headers=None, retry_count=3):
         """
@@ -123,67 +120,22 @@ class BaseHelloApp():
         @param retry_count: how many times to retry a connection on failure
                             set to 0 to try forever.
         """
+        self.headers = self._headers.copy()
+        self.headers.update(headers or {})
         self._urlbase = "/webservice/interface/"
-        self.retry_count = retry_count
+        self._retry_count = retry_count
 
         self._ipv4 = ipv4
         self._host, self._port = self._parse_ipv4(ipv4)
         self._connection = self._init_connection(self._host, self._port)
 
-        # create instance copy
-        self.headers = self._headers.copy()
-        if headers is not None:
-            self.headers.update(headers)
-
         self._parse_rsp = parse_rsp
-
-        # setup logger and export some methods
         self._logger = logging.Logger(self._calc_logger_name(ipv4))
-        self._log = self._logger.log
-        self._debug = self._logger.debug
-        self._warn = self._logger.warning
-        self._info = self._logger.info
 
     def _calc_logger_name(self, ipv4):
         return "%s: %s" % (self.__class__.__name__, ipv4)
 
-    def _parse_ipv4(self, ipv4):
-        """
-        @param ipv4: ipv4 internet address
-        @type ipv4: str
-        @return: (host, port) tuple
-        @rtype: (str, int)
-
-        Parse IPV4 address into host and port. Default to
-        port 80 (HTTP port) if none given.
-        """
-        if ':' in ipv4:
-            host, port = ipv4.split(':')
-        else:
-            host = ipv4
-            port = 80
-
-        host = str(ipaddress.IPv4Address(host))
-        return host, port
-
-    def _init_connection_fromipv4(self, ipv4):
-        """
-        @param ipv4: IPV4 internet address
-        @type ipv4: str
-        @return: HTTPConnection object
-        @rtype: HTTPConnection
-        """
-        host, port = self._parse_ipv4(ipv4)
-        return self._init_connection(host, port)
-
     def _init_connection(self, host, port):
-        """
-        @param host: host to connect to
-        @type host: str
-        @param port: port to connect on
-        @type port: int
-        @return: HTTPConnection object
-        """
         return LVWSHTTPConnection(host, port)
 
     def close(self):
@@ -191,30 +143,8 @@ class BaseHelloApp():
             self._connection.close()
 
     def reconnect(self):
-        """
-        Internal convenience to reconnect using stored (host, port).
-        """
         self._connection.close()
         self._connection.connect()
-
-    def setip(self, ipv4):
-        """
-        @param ipv4: ipv4 address
-        @type ipv4: str
-        @return: None
-        @rtype: None
-
-        User responsible for making sure they didn't screw up the ipv4.
-        Set internal ip address
-        """
-        if ipv4 == self._ipv4:
-            return
-        self.close()
-        self._urlbase = self._url_template % ipv4
-        self._ipv4 = ipv4
-        self._host, self._port = self._parse_ipv4(ipv4)
-        self._connection = self._init_connection(self._host, self._port)
-        self._logger.name = self._calc_logger_name(ipv4)
 
     @property
     def ipv4(self):
@@ -249,36 +179,23 @@ class BaseHelloApp():
         return self.send_request(query)
 
     def _do_request(self, url):
-        nattempts = 1
-        while True:
+        err = None
+        for _ in range(1, self._retry_count+1):
             try:
-                rsp = self._connection.do_request('GET', url, None, self.headers)
-            except (ConnectionError, HTTPException, socket.timeout, TimeoutError):
-                if self.retry_count:
-                    if nattempts > self.retry_count:
-                        raise
-                    else:
-                        nattempts += 1
+                return self._connection.do_request('GET', url, None, self.headers)
+            except (ConnectionError, HTTPException, TimeoutError) as e:
+                err = e
                 self.reconnect()
-            except Exception:
-                # debug. eventually all connection quirks should be worked out
-                # and handled appropriately.
-                import traceback
-
-                self._warn("=====================================")
-                self._warn("UNKNOWN ERROR OCCURRED DURING REQUEST")
-                self._warn("IPV4 ADDRESS: %s", self._ipv4)
-                self._warn("REQUESTED URL: <%s>", url)
-                self._warn("=====================================")
-                self._warn(traceback.format_exc())
-                if self.retry_count:
-                    if nattempts > self.retry_count:
-                        raise
-                    else:
-                        nattempts += 1
-                self.reconnect()
-            else:
-                return rsp
+            except Exception as e:
+                err = e
+                msg = "%s(%s)" % (err.__class__.__name__, ", ".join(err.args))
+                self._logger.warn("=====================================")
+                self._logger.warn("RROR OCCURRED DURING REQUEST")
+                self._logger.warn("IPV4 ADDRESS: %s", self._ipv4)
+                self._logger.warn("REQUESTED URL: <%s>", url)
+                self._logger.warn("MESSAGE: %s" % msg)
+                self._logger.warn("=====================================")
+        raise err
 
     def _send_request_raw(self, url):
         """
@@ -338,12 +255,9 @@ class HelloApp(BaseHelloApp):
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
-    def getAlarms(self, mode='first', val1='100', val2='1', loader="Loading+alarms..."):
+    def getAlarms(self, mode='first', val1='100', val2='1'):
 
-        if loader:
-            query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s&loader=%s" % (mode, val1, val2, loader)
-        else:
-            query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
+        query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
         rsp = self.send_request(query)
         xml = HelloXML(rsp)
         if not xml.result:
@@ -485,40 +399,17 @@ class HelloApp(BaseHelloApp):
         query = "?&call=getMainValues&json=true"
         rsp = self.send_request(query)
         mv = json_loads(rsp.read().decode('utf-8'))
-        return mv['message']
+        return mv
 
     # backward compatibility
     gmv = getMainValues
     gpmv = getMainValues
-
-    def getAdvancedValues(self):
-        query = "?&call=getAdvancedValues"
-        rsp = self.send_request(query)
-        xml = HelloXML(rsp)
-        if not xml.result:
-            raise ServerCallError(xml.msg)
-        return xml.data['Advanced Values']
-
-    # backward compatibility
-    getadvv = getAdvancedValues
 
     def setconfig(self, group, name, val):
         name = sanitize_url(name)
         query = "?&call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
-
-    def setpumpa(self, mode=0, val=0):
-        query = "?&call=setpumpa&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
-
-    def setpumpb(self, mode=0, val=0):
-        query = "?&call=setpumpb&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
-
-    def setpumpc(self, mode=0, val=0):
-        query = "?&call=setpumpc&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
 
     def trycal(self, sensor, val1, target1, val2=None, target2=None):
         """
@@ -628,12 +519,16 @@ class HelloApp(BaseHelloApp):
     def __getstate__(self):
         d = self.__dict__.copy()
         del d['_connection']
+        d['host'] = self._connection.host
+        d['port'] = self._connection.port
         return d
 
     def __setstate__(self, state):
+        host = state.pop('host')
+        port = state.pop('port')
         for k, v in state.items():
             setattr(self, k, v)
-        self._connection = self._init_connection(self._host, self._port)
+        self._connection = self._init_connection(host, port)
 
 
 class HelloXML():
