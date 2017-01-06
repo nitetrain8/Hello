@@ -12,6 +12,8 @@ Maybe turn into __init__.py?
 """
 from collections import OrderedDict
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
+import ssl
+import datetime
 
 __author__ = 'Nathan Starkweather'
 
@@ -41,6 +43,11 @@ class ServerCallError(HelloError):
 
 class TrueError(ServerCallError):
     """ Server was stupid. """
+
+class NotLoggedInError(ServerCallError):
+    pass
+
+
 
 AuthError = ServerCallError
 
@@ -105,15 +112,41 @@ class DoRequestMixin():
 class LVWSHTTPConnection(DoRequestMixin, HTTPConnection):
     pass
 
-
 class LVWSHTTPSConnection(DoRequestMixin, HTTPSConnection):
-    pass
+    def __init__(self, *args, **kw):
+        context = ssl._create_unverified_context()
+        super().__init__(*args, context=context, **kw)
+        self.cert_reqs = 'CERT_NONE'
+        self.ca_certs = None
+        self.ca_cert_dir = None
+
+
+import requests
+class HTTPSSession(requests.Session):
+    def __init__(self, host, port=None, timeout=5):
+        super().__init__()
+        self._base = "https://%s" % host
+        if port:
+            self._base += ":%d" % port
+        self._timeout = timeout
+    def do_request(self, meth, url, body=None, headers=None):
+        url = self._base + url
+        rsp = self.request(meth, url, body, headers, timeout=self._timeout)
+        # XXX Sloppy. Refactor HelloApp to not use read()
+        def read(_):
+            return rsp.content
+        rsp.read = read
+        return rsp
+    def connect(self):
+        pass
+
 
 
 class BaseHelloApp():
     _headers = {}
+    ConnectionFactory = LVWSHTTPSConnection
 
-    def __init__(self, ipv4, headers=None, retry_count=3):
+    def __init__(self, ipv4, headers=None, retry_count=3, timeout=5):
         """
         @param ipv4: ipv4 address to connect to (string eg 192.168.1.1:80)
         @param headers: headers to pass on each http connection
@@ -126,8 +159,9 @@ class BaseHelloApp():
         self._retry_count = retry_count
 
         self._ipv4 = ipv4
-        self._host, self._port = self._parse_ipv4(ipv4)
-        self._connection = self._init_connection(self._host, self._port)
+        
+        self._connection = self._init_connection(ipv4, None, timeout)
+        self._connection.connect()
 
         self._parse_rsp = parse_rsp
         self._logger = logging.Logger(self._calc_logger_name(ipv4))
@@ -135,8 +169,8 @@ class BaseHelloApp():
     def _calc_logger_name(self, ipv4):
         return "%s: %s" % (self.__class__.__name__, ipv4)
 
-    def _init_connection(self, host, port):
-        return LVWSHTTPConnection(host, port)
+    def _init_connection(self, host, port=None, timeout=5):
+        return self.ConnectionFactory(host, port, timeout=timeout)
 
     def close(self):
         if self._connection:
@@ -179,7 +213,6 @@ class BaseHelloApp():
         return self.send_request(query)
 
     def _do_request(self, url):
-        err = None
         for _ in range(1, self._retry_count+1):
             try:
                 return self._connection.do_request('GET', url, None, self.headers)
@@ -188,9 +221,9 @@ class BaseHelloApp():
                 self.reconnect()
             except Exception as e:
                 err = e
-                msg = "%s(%s)" % (err.__class__.__name__, ", ".join(err.args))
+                msg = "%s(%s)" % (err.__class__.__name__, ", ".join(str(a) for a in err.args))
                 self._logger.warn("=====================================")
-                self._logger.warn("RROR OCCURRED DURING REQUEST")
+                self._logger.warn("ERROR OCCURRED DURING REQUEST")
                 self._logger.warn("IPV4 ADDRESS: %s", self._ipv4)
                 self._logger.warn("REQUESTED URL: <%s>", url)
                 self._logger.warn("MESSAGE: %s" % msg)
@@ -231,11 +264,17 @@ class BaseHelloApp():
             raise ServerCallError(root[1].text)
         return True
 
+    def settimeout(self, s):
+        self._connection.sock.settimeout(s)
+
+    def gettimeout(self):
+        return self._connection.sock.gettimeout()
+
 
 class HelloApp(BaseHelloApp):
 
     def login(self, user='user1', pwd='12345'):
-        query = "?&call=login&val1=%s&val2=%s&loader=Authenticating...&skipValidate=true" % (user, pwd)
+        query = "?&call=login&val1=%s&val2=%s" % (user, pwd)
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
@@ -256,7 +295,6 @@ class HelloApp(BaseHelloApp):
         return self._do_set_validate(rsp)
 
     def getAlarms(self, mode='first', val1='100', val2='1'):
-
         query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
         rsp = self.send_request(query)
         xml = HelloXML(rsp)
@@ -270,8 +308,6 @@ class HelloApp(BaseHelloApp):
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.msg)
-
-        # Not a parsing bug. the name of the cluster is "cluster". 
         return xml.data['cluster']
 
     def getUnAckCount(self):
@@ -282,7 +318,7 @@ class HelloApp(BaseHelloApp):
             raise ServerCallError(xml.msg)
         return int(xml.data)
 
-    def getReport(self, mode, type, val1, val2='', timeout=120000):
+    def getReport(self, mode, type, val1, val2='', timeout=120000, suppress=True):
         """
         @param mode: 'byBatch' or 'byDate'
         @param type: data, recipe steps, errors, or user events
@@ -290,14 +326,15 @@ class HelloApp(BaseHelloApp):
         @param val2: blank if byBatch, or end date
         @param timeout: who knows.
         """
-        # not sure what timeout does
-        query = "?&call=getReport&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
+        # url got weird because Chen because LabVIEW
+        url = "/webservice/getReport/?&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
                 (mode, type, val1, val2, timeout)
-        rsp = self.send_request(query)
-        xml = HelloXML(rsp)
-        if not xml.result:
-            raise ServerCallError(xml.data)
-        return xml.data
+        rsp = self._send_request_raw(url)
+        data = json_loads(rsp.read().decode())
+        message = data['message']
+        if not message:
+            raise ServerCallError(data['error'])
+        return message
 
     def getBatches(self):
         query = "?&call=getBatches&loader=Loading+batches..."
@@ -316,17 +353,19 @@ class HelloApp(BaseHelloApp):
         @rtype: bytes
         """
         fname = self.getReport('byBatch', 'process_data', val1)
+        return self.getfile(fname)
 
+    def getfile(self, fname):
         # chen fucked up the url on the new protocol so bad I had to
         # restructure helloapp to sensibly work with it
-        url = "/webservice/reports/?&getfile=" + fname
-        rsp2 = self._send_request_raw(url)
-        return rsp2.read()
+        # and then fucked it up again in 3.0
+        # /getfile/?&getfile? really? really?
+        url = "/webservice/getfile/?&getfile=" + fname
+        rsp = self._send_request_raw(url)
+        return rsp.read()
 
     def getdatareport_bybatchname(self, name):
-        query = "?&call=getBatches&loader=Loading+batches..."
-        rsp = self.send_request(query)
-        xml = BatchListXML(rsp)
+        xml = self.getBatches()
         try:
             id = xml.getbatchid(name)
         except KeyError:
@@ -372,18 +411,19 @@ class HelloApp(BaseHelloApp):
     def set_mode(self, group, mode, val):
         query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp.read())
+        return self._do_set_validate(rsp)
 
     def getDORAValues(self):
         query = "?&call=getDORAValues"
         rsp = self.send_request(query)
         xml = HelloXML(rsp)
 
-        # Get dora values ends up returning a blank element
-        # for the name of the cluster, so the dict ends up
-        # being {None: DoraValues}
         if not xml.result:
             raise ServerCallError(xml.msg)
+
+        # getDORAValues ends up returning a blank element
+        # for the name of the cluster, so the dict ends up
+        # being {None: DoraValues}
         return xml.data[None]
 
     def batchrunning(self):
@@ -401,6 +441,10 @@ class HelloApp(BaseHelloApp):
         mv = json_loads(rsp.read().decode('utf-8'))
         return mv
 
+    def loadbag(self, expirationDate='', part='', serial='', pham='', phab='', phat='', 
+                phbm='', phbb='', phbt='', doam='', doab='', dobm='', dobb=''):
+        raise NotImplementedError
+
     # backward compatibility
     gmv = getMainValues
     gpmv = getMainValues
@@ -410,6 +454,22 @@ class HelloApp(BaseHelloApp):
         query = "?&call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
+
+    def setpumpa(self, mode=0, val=0):
+        query = "?&call=setpumpa&val1=%d&val2=%d" % (mode, val)
+        return self._do_set_validate(self.send_request(query))
+
+    def setpumpb(self, mode=0, val=0):
+        query = "?&call=setpumpb&val1=%d&val2=%d" % (mode, val)
+        return self._do_set_validate(self.send_request(query))
+
+    def setpumpc(self, mode=0, val=0):
+        query = "?&call=setpumpc&val1=%d&val2=%d" % (mode, val)
+        return self._do_set_validate(self.send_request(query))
+
+    def setpumpsample(self, mode=0, val=0):
+        query = "?&call=setpumpsample&val1=%d&val2=%d" % (mode, val)
+        return self._do_set_validate(self.send_request(query))
 
     def trycal(self, sensor, val1, target1, val2=None, target2=None):
         """
@@ -446,10 +506,9 @@ class HelloApp(BaseHelloApp):
             raise ServerCallError(xml.data)
         return xml.data['Versions']
 
+    # Convenience functions
     def getmodelsize(self):
         return int(self.getVersion()['Model'][4:])
-
-    # Convenience functions
 
     def getdopv(self):
         return self.gpmv()['do']['pv']
@@ -493,8 +552,6 @@ class HelloApp(BaseHelloApp):
         except KeyError:
             return xml.data['System_Variables']
 
-    gpcfg = getConfig
-
     def getRecipes(self, loader="Loading+recipes"):
         query = "?&call=getRecipes&loader=" + loader
         rsp = self.send_request(query)
@@ -508,39 +565,25 @@ class HelloApp(BaseHelloApp):
         rsp = self.send_request(query)
         return json_loads(rsp.read().decode('utf-8'))
 
-    # repl support
-
     def __repr__(self):
-        base = super().__repr__()
-        return ' '.join((base, 'ipv4', self._ipv4))
+        h = self._connection.host
+        p = self._connection.port
+        return "%s(\"%s:%s\")" % (self.__class__.__name__, h, p)
 
     __str__ = __repr__
-
-    def __getstate__(self):
-        d = self.__dict__.copy()
-        del d['_connection']
-        d['host'] = self._connection.host
-        d['port'] = self._connection.port
-        return d
-
-    def __setstate__(self, state):
-        host = state.pop('host')
-        port = state.pop('port')
-        for k, v in state.items():
-            setattr(self, k, v)
-        self._connection = self._init_connection(host, port)
 
 
 class HelloXML():
 
     def __init__(self, xml):
         if isinstance(xml, str):
+            root = parse_xml(xml.encode())
+        elif isinstance(xml, bytes):
             root = parse_xml(xml)
         else:
             root = parse_rsp(xml)
 
         self._parse_types = self._get_parse_types()
-
         self._init(root)
 
     def _get_parse_types(self):
@@ -552,7 +595,8 @@ class HelloXML():
             'U8': self.parse_int,
             'Cluster': self.parse_cluster,
             'String': self.parse_string,
-            'Boolean': self.parse_bool
+            'Boolean': self.parse_bool,
+            'SGL': self.parse_float,
         }
 
     def _init(self, root):
@@ -635,6 +679,9 @@ class HelloXML():
         ns[name] = val
 
 
+def _parse_date(s):
+    return datetime.datetime.strptime(s, "%I:%M:%S %p\n %m/%d/%Y") 
+
 class BatchEntry():
     """ The list of batch entries returned by the
     getBatches call is very unfortunate to work with.
@@ -653,13 +700,15 @@ class BatchEntry():
         self.serial_number = serial_number
         self.user = user
 
-        self.start_time = int(start_time)
+        self.start_time = _parse_date(start_time)
         if stop_time == 'None':
             stop_time = None
-        stop_time = int(stop_time or time())
-        if stop_time - self.start_time < 0:
-            stop_time = 2 ** 31 - 1  # epoch
+        stop_time = _parse_date(stop_time) if stop_time else datetime.datetime.now()
         self.stop_time = stop_time
+
+        assert self.stop_time >= self.start_time, (self.start_time, self.stop_time)  # server's fault not mine
+        # if self.stop_time < self.start_time:
+            # self.stop_time = self.start_time + datetime.timedelta(days=1)
 
         self.product_number = product_number
         self.rev = rev
@@ -731,7 +780,7 @@ class BatchListXML(HelloXML):
             self.max_id = max(self.ids_to_batches.keys())
             self._parsed = True
         else:
-            self.names_to_batches = self.ids_to_batches = None
+            self.names_to_batches = self.ids_to_batches = {}
             self.data = self.reply['Message']
 
     def getdata(self):

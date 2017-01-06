@@ -116,7 +116,7 @@ class BaseHelloApp():
     _headers = {}
     _url_template = "http://%s/webservice/interface/"
 
-    def __init__(self, ipv4, headers=None, retry_count=3):
+    def __init__(self, ipv4, headers=None, retry_count=3, timeout=socket.getdefaulttimeout()):
         """
         @param ipv4: ipv4 address to connect to (string eg 192.168.1.1:80)
         @param headers: headers to pass on each http connection
@@ -128,7 +128,8 @@ class BaseHelloApp():
 
         self._ipv4 = ipv4
         self._host, self._port = self._parse_ipv4(ipv4)
-        self._connection = self._init_connection(self._host, self._port)
+        self._connection = self._init_connection(self._host, self._port, timeout)
+        self._connection.connect()
 
         # create instance copy
         self.headers = self._headers.copy()
@@ -146,6 +147,12 @@ class BaseHelloApp():
 
     def _calc_logger_name(self, ipv4):
         return "%s: %s" % (self.__class__.__name__, ipv4)
+
+    def settimeout(self, s):
+        self._connection.sock.settimeout(s)
+
+    def gettimeout(self):
+        return self._connection.sock.gettimeout()
 
     def _parse_ipv4(self, ipv4):
         """
@@ -176,7 +183,7 @@ class BaseHelloApp():
         host, port = self._parse_ipv4(ipv4)
         return self._init_connection(host, port)
 
-    def _init_connection(self, host, port):
+    def _init_connection(self, host, port, timeout):
         """
         @param host: host to connect to
         @type host: str
@@ -184,7 +191,7 @@ class BaseHelloApp():
         @type port: int
         @return: HTTPConnection object
         """
-        return LVWSHTTPConnection(host, port)
+        return LVWSHTTPConnection(host, port, timeout=timeout)
 
     def close(self):
         if self._connection:
@@ -250,35 +257,29 @@ class BaseHelloApp():
 
     def _do_request(self, url):
         nattempts = 1
+        err = None
         while True:
             try:
-                rsp = self._connection.do_request('GET', url, None, self.headers)
+                return self._connection.do_request('GET', url, None, self.headers)
             except (ConnectionError, HTTPException, socket.timeout, TimeoutError):
-                if self.retry_count:
-                    if nattempts > self.retry_count:
-                        raise
-                    else:
-                        nattempts += 1
-                self.reconnect()
-            except Exception:
+                pass
+            except Exception as e: 
                 # debug. eventually all connection quirks should be worked out
                 # and handled appropriately.
-                import traceback
-
+                err = e
                 self._warn("=====================================")
                 self._warn("UNKNOWN ERROR OCCURRED DURING REQUEST")
                 self._warn("IPV4 ADDRESS: %s", self._ipv4)
                 self._warn("REQUESTED URL: <%s>", url)
+                self._warn(str(e))
                 self._warn("=====================================")
-                self._warn(traceback.format_exc())
-                if self.retry_count:
-                    if nattempts > self.retry_count:
-                        raise
-                    else:
-                        nattempts += 1
-                self.reconnect()
+
+            if self.retry_count and nattempts > self.retry_count:
+                raise err or Exception("Unknown Error")
             else:
-                return rsp
+                nattempts += 1
+
+            self.reconnect()
 
     def _send_request_raw(self, url):
         """
@@ -368,6 +369,11 @@ class HelloApp(BaseHelloApp):
             raise ServerCallError(xml.msg)
         return int(xml.data)
 
+    def runrecipe(self, name):
+        query = "?&call=runRecipe&recipe=%s" % name.replace(" ", "_")
+        rsp = self.send_request(query)
+        return self._do_set_validate(rsp)
+
     def getReport(self, mode, type, val1, val2='', timeout=120000):
         """
         @param mode: 'byBatch' or 'byDate'
@@ -402,12 +408,21 @@ class HelloApp(BaseHelloApp):
         @rtype: bytes
         """
         fname = self.getReport('byBatch', 'process_data', val1)
+        return self.getfile(fname)
 
+    def getfile(self, fname):
         # chen fucked up the url on the new protocol so bad I had to
         # restructure helloapp to sensibly work with it
         url = "/webservice/reports/?&getfile=" + fname
         rsp2 = self._send_request_raw(url)
         return rsp2.read()
+
+
+    def getdatareport_bydate(self, d1, d2):
+        v1 = int(d1.timestamp())
+        v2 = int(d2.timestamp())
+        fname = self.getReport('byDate', 'process_data', v1, v2)
+
 
     def getdatareport_bybatchname(self, name):
         query = "?&call=getBatches&loader=Loading+batches..."
@@ -518,6 +533,10 @@ class HelloApp(BaseHelloApp):
 
     def setpumpc(self, mode=0, val=0):
         query = "?&call=setpumpc&val1=%d&val2=%d" % (mode, val)
+        return self._do_set_validate(self.send_request(query))
+
+    def setpumpsample(self, mode=0, val=0):
+        query = "?&call=setpumpsample&val1=%d&val2=%d" % (mode, val)
         return self._do_set_validate(self.send_request(query))
 
     def trycal(self, sensor, val1, target1, val2=None, target2=None):

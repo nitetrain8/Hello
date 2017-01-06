@@ -13,10 +13,10 @@ from time import time, sleep
 from datetime import datetime
 from io import StringIO
 
-from hello.hello import HelloApp, BadError
+from hello.hello3 import HelloApp, BadError
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2, FormatChart
-from hello.logger import Logger, BuiltinLogger
+from pysrc.logger import Logger, BuiltinLogger
 from officelib.xllib.xlcom import HiddenXl
 
 
@@ -67,7 +67,7 @@ class PIDTest():
         self.passed = False
         self.data = None
         if logger is None:
-            logger = BuiltinLogger("PIDTest(%.3f, %.3f, %.3f, %d)" % (p, i, d, sp))
+            logger = BuiltinLogger("PIDTest-%s-%s-%s-%s" % (p, i, d, sp))
         self.logger = logger
         if type(app_or_ipv4) is HelloApp:
             self.app = app_or_ipv4
@@ -87,7 +87,7 @@ class PIDTest():
 
         self.logger.info("Setting PID Settings")
         app.login()
-        app.setconfig("Agitation", "P_Gain__(%/RPM)", self.p)
+        app.setconfig("Agitation", "P_Gain_(%/RPM)", self.p)
         app.setconfig("Agitation", "I_Time_(min)", self.i)
         app.setconfig("Agitation", "D Time (min)", self.d)
         
@@ -214,7 +214,7 @@ class PIDRunner(Logger):
     @type _results: list[PIDTest]
     """
 
-    _docroot = "C:\\Users\\Public\\Documents\\PBSSS\\Agitation\\Mag Wheel PID\\"
+    _docroot = "C:\\Users\\Nathan\\Documents\\Agitation\\Mag Wheel PID\\"
 
     def __init__(self, pgains=(), itimes=(), dtimes=(), sps=(), othercombos=(), wb_name=None,
                  app_or_ipv4='192.168.1.6', mintime=180):
@@ -283,12 +283,12 @@ class PIDRunner(Logger):
 
         # agitation settings
         self.settings = {
-            ("Agitation", "Minimum (RPM)"): 3,
-            ("Agitation", "Power Auto Max (%)"): 100,
-            ("Agitation", "Power Auto Min (%)"): 0.4,
-            ("Agitation", "Auto Max Startup (%)"): 10,
-            ("Agitation", "Samples To Average"): 1,
-            ("Agitation", "Min Mag Interval (s)"): 0.1,
+            #("Agitation", "Minimum (RPM)"): 3,
+            #("Agitation", "Power Auto Max (%)"): 100,
+            #("Agitation", "Power Auto Min (%)"): 0.4,
+            #("Agitation", "Auto Max Startup (%)"): 10,
+            #("Agitation", "Samples To Average"): 1,
+            #("Agitation", "Min Mag Interval (s)"): 0.1,
             #("Agitation", "Max Change Rate (%/s)"): 100,
             #("Agitation", "PWM Period (us)"): 1000,
             #("Agitation", "PWM OnTime (us)"): 1000
@@ -347,10 +347,10 @@ class PIDRunner(Logger):
         test is *not* added to the list of completed tests.
         """
         q = self._app_or_ipv4
-        if type(q) is HelloApp:
-            app = q
-        else:
+        if isinstance(q, str):
             app = HelloApp(q)
+        else:
+            app = q
 
         self._init_settings(app)
 
@@ -384,6 +384,7 @@ class PIDRunner(Logger):
         """
         Initialize the excel instance used by other functions
         """
+        assert self._full_xl_name is not None
         if path_exists(self._full_xl_name):
             self._log("Uh oh, existing workbook.")
             self._log("Modifying filename.")
@@ -546,7 +547,7 @@ class PIDRunner(Logger):
         self._log("Initializing Settings")
 
         for (grp, setting), val in self.settings.items():
-            self._log("Setting %s %s to %s" % (grp, setting, str(val)))
+            self._log("Setting %r %r to %r" % (grp, setting, str(val)))
             app.login()
             app.setconfig(grp, setting, val)
 

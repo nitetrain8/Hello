@@ -63,6 +63,9 @@ class BatchExporter():
         if not self.app:
             raise ValueError("Error- no app!")
         self.app.login('pbstech', '727246')
+        if self.app.batchrunning():
+            print("Stopping running batch...")
+            self.app.endbatch()
         print("Downloading File...")
         report = self.app.getdatareport_bybatchname(batch_name)
         print("Analyzing File...")
@@ -70,13 +73,10 @@ class BatchExporter():
 
     def _do_xl_import(self, tmpname):
         xl, wb, ws, cells = xlcom.xlObjs(tmpname, visible=False)
-
         with xlcom.HiddenXl(xl):
             xrng, yrng = xladdress.column_pair_range_str_by_header(cells, 'LevelPV(L)')
             chart = xlcom.CreateChart(ws)
-
             chart_name = "%s Batch Export" % self.reactor_name
-
             xlcom.CreateDataSeries(chart, xrng, yrng)
             xlcom.FormatChart(chart, None, chart_name, "Date", "LevelPV", Legend=False)
             chart.Location(officelib.const.xlLocationAsNewSheet)

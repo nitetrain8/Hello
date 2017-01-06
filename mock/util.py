@@ -281,12 +281,9 @@ class HelloXMLGenerator():
         cluster.tail = name_ele.tail = numelts.tail = "\n"
         cluster.text = "\n"
 
-        try:
-            for name, item in obj:
-                self.parse(item, name, cluster)
-        except:
-            print(obj)
-            raise
+        for name, item in obj:
+            self.parse(item, name, cluster)
+
 
     def dict_toxml(self, obj, name, root):
         cluster = SubElement(root, "Cluster")
@@ -376,7 +373,8 @@ hello_xml_from_obj = xml_generator.hello_xml_from_obj
 
 
 from json import JSONEncoder
-from json.encoder import encode_basestring_ascii, encode_basestring, FLOAT_REPR, INFINITY
+from json.encoder import encode_basestring_ascii, encode_basestring, INFINITY
+FLOAT_REPR = float.__repr__
 
 
 def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
