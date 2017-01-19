@@ -24,6 +24,8 @@ import logging
 import ipaddress
 import socket
 
+from hello import _hello
+
 
 class BadError(Exception):
     """ Encompases all things bad. """
@@ -99,7 +101,7 @@ def parse_rsp(rsp):
 
 
 def open_hello(app_or_ipv4):
-    if isinstance(app_or_ipv4, HelloApp):
+    if isinstance(app_or_ipv4, _hello._BaseHelloApp):
         return app_or_ipv4
     else:
         return HelloApp(app_or_ipv4)
@@ -112,7 +114,7 @@ class LVWSHTTPConnection(HTTPConnection):
         return self.getresponse()
 
 
-class BaseHelloApp():
+class BaseHelloApp(_hello._BaseHelloApp):
     _headers = {}
     _url_template = "http://%s/webservice/interface/"
 

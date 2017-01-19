@@ -14,6 +14,7 @@ from collections import OrderedDict
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 import ssl
 import datetime
+import io
 
 __author__ = 'Nathan Starkweather'
 
@@ -25,6 +26,10 @@ import types
 import logging
 import ipaddress
 import traceback
+import socket
+import itertools
+
+from hello import _hello
 
 
 class BadError(Exception):
@@ -96,7 +101,7 @@ def parse_rsp(rsp):
 
 
 def open_hello(app_or_ipv4):
-    if isinstance(app_or_ipv4, HelloApp):
+    if isinstance(app_or_ipv4, _hello._BaseHelloApp):
         return app_or_ipv4
     else:
         return HelloApp(app_or_ipv4)
@@ -122,29 +127,43 @@ class LVWSHTTPSConnection(DoRequestMixin, HTTPSConnection):
 
 
 import requests
-class HTTPSSession(requests.Session):
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+class HTTPSSession():
     def __init__(self, host, port=None, timeout=5):
         super().__init__()
         self._base = "https://%s" % host
         if port:
             self._base += ":%d" % port
+        self.sess = requests.Session()
         self._timeout = timeout
+
+        # For public access (api compatibility)
+        self.host = host
+        self.port = port
     def do_request(self, meth, url, body=None, headers=None):
         url = self._base + url
-        rsp = self.request(meth, url, body, headers, timeout=self._timeout)
+        rsp = self.sess.request(meth, url, body, None, timeout=self._timeout, verify=False)
         # XXX Sloppy. Refactor HelloApp to not use read()
-        def read(_):
-            return rsp.content
-        rsp.read = read
+        file = io.BytesIO(rsp.content)
+        rsp.read = file.read
         return rsp
     def connect(self):
-        pass
+        self.sess = requests.Session()
+    def close(self):
+        self.sess = requests.Session()
 
 
+# modes
+AUTO = 0
+MAN = 1
+OFF = 2
 
-class BaseHelloApp():
+
+class BaseHelloApp(_hello._BaseHelloApp):
     _headers = {}
-    ConnectionFactory = LVWSHTTPSConnection
+    ConnectionFactory = HTTPSSession
 
     def __init__(self, ipv4, headers=None, retry_count=3, timeout=5):
         """
@@ -156,7 +175,7 @@ class BaseHelloApp():
         self.headers = self._headers.copy()
         self.headers.update(headers or {})
         self._urlbase = "/webservice/interface/"
-        self._retry_count = retry_count
+        self.retry_count = retry_count
 
         self._ipv4 = ipv4
         
@@ -213,7 +232,11 @@ class BaseHelloApp():
         return self.send_request(query)
 
     def _do_request(self, url):
-        for _ in range(1, self._retry_count+1):
+        if self.retry_count > -1:
+            it = range(self.retry_count + 1)
+        else:
+            it = itertools.count(0)  # forever
+        for _ in it:
             try:
                 return self._connection.do_request('GET', url, None, self.headers)
             except (ConnectionError, HTTPException, TimeoutError) as e:
@@ -228,6 +251,7 @@ class BaseHelloApp():
                 self._logger.warn("REQUESTED URL: <%s>", url)
                 self._logger.warn("MESSAGE: %s" % msg)
                 self._logger.warn("=====================================")
+                self.reconnect()
         raise err
 
     def _send_request_raw(self, url):
@@ -258,25 +282,58 @@ class BaseHelloApp():
         """
         Quickly validate that a set call returned a successful response.
         """
-        root = self._parse_rsp(rsp)
+        try:
+            root = self._parse_rsp(rsp)
+        except:
+            print(rsp.read())
+            raise
         result = root[0]
         if not result.text == "True":
-            raise ServerCallError(root[1].text)
+            if root[1].text.startswith("No user associated"):
+                raise NotLoggedInError(root[1].text)
+            else:
+                raise ServerCallError(root[1].text)
         return True
 
-    def settimeout(self, s):
-        self._connection.sock.settimeout(s)
+    def _verify_xml(self, xml):
+        if not xml.result:
+            if isinstance(xml.data, str):
+                if xml.data.startswith("No user associated"):
+                    raise NotLoggedInError(xml.data)
+                raise ServerCallError(xml.data)
+            else:
+                raise ServerCallError(xml.data)
 
-    def gettimeout(self):
-        return self._connection.sock.gettimeout()
+
+def _retry_on_auth_fail(func):
+    def wrapper(self, *args, **kw):
+        try:
+            rv = func(self, *args, **kw)
+        except NotLoggedInError:
+            pass
+        else:
+            return rv
+        if self._user and self._password:
+            self.login(self._user, self._password)
+            return func(self, *args, **kw)
+    return wrapper
 
 
 class HelloApp(BaseHelloApp):
 
+    def __init__(self, ipv4, headers=None, retry_count=3, timeout=socket.getdefaulttimeout()):
+        super().__init__(ipv4, headers, retry_count, timeout)
+        self._user = ""
+        self._password = ""
+
     def login(self, user='user1', pwd='12345'):
         query = "?&call=login&val1=%s&val2=%s" % (user, pwd)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        if self._do_set_validate(rsp):
+            self._user = user
+            self._password = pwd
+            return True
+        return False
 
     def logout(self):
         query = "?&call=logout"
@@ -408,8 +465,10 @@ class HelloApp(BaseHelloApp):
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
-    def set_mode(self, group, mode, val):
+    def set_mode(self, group, mode, val, val2=""):
         query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
+        if val2:
+            query += "&val2=%s"%val2
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
@@ -541,9 +600,7 @@ class HelloApp(BaseHelloApp):
         query = "?&call=getConfig"
         rsp = self.send_request(query)
         xml = HelloXML(rsp)
-        if not xml.result:
-            raise ServerCallError(xml.msg)
-
+        self._verify_xml(xml)
         # apparently Hello works just fine with either
         # of these, so the server can send back either one
         # check here so that we return the correct key. 
@@ -566,9 +623,10 @@ class HelloApp(BaseHelloApp):
         return json_loads(rsp.read().decode('utf-8'))
 
     def __repr__(self):
-        h = self._connection.host
-        p = self._connection.port
-        return "%s(\"%s:%s\")" % (self.__class__.__name__, h, p)
+        h = self._connection.host or ""
+        p = self._connection.port or ""
+        c = ":" if p else ""
+        return "%s(\"%s%s%s\")" % (self.__class__.__name__, h, c, p)
 
     __str__ = __repr__
 
