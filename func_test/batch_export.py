@@ -12,6 +12,9 @@ from hello.hello import HelloApp
 import os
 import officelib.const
 from officelib.xllib import xlcom, xladdress
+from tkinter.filedialog import askopenfilename
+import sys
+import datetime
 
 
 _func_test_folder = "\\\\PBSStation\\PBSCloudShare\\(4) Manufacturing & Operations\\Functional Testing"
@@ -74,12 +77,52 @@ class BatchExporter():
     def _do_xl_import(self, tmpname):
         xl, wb, ws, cells = xlcom.xlObjs(tmpname, visible=False)
         with xlcom.HiddenXl(xl):
+            # Plot Chart
             xrng, yrng = xladdress.column_pair_range_str_by_header(cells, 'LevelPV(L)')
             chart = xlcom.CreateChart(ws)
             chart_name = "%s Batch Export" % self.reactor_name
             xlcom.CreateDataSeries(chart, xrng, yrng)
             xlcom.FormatChart(chart, None, chart_name, "Date", "LevelPV", Legend=False)
             chart.Location(officelib.const.xlLocationAsNewSheet)
+
+            # Verify two column data requirement
+            c1 = cells.Range("A2")
+            c2 = c1.Offset(1,2)
+            c3 = c2.Offset(1,2)
+
+            failed = False
+            def fail():
+                nonlocal failed
+                failed = True
+    
+            while not failed:
+                v1 = c1.Value
+                v2 = c2.Value
+                v3 = c3.Value
+                if v1 is None:
+                    if v2 is not None: 
+                        fail()
+                    else:
+                        break
+                else:
+                    if not isinstance(v1, datetime.datetime):
+                        fail()
+                    try:
+                        float(v2)
+                    except Exception:
+                        fail()
+                if v3 is not None: fail()
+
+                c1 = c1.Offset(1, 4)
+                c2 = c2.Offset(1, 4)
+                c3 = c3.Offset(1, 4)
+
+            if failed:
+                print("Data Column Assert: FAILURE")
+                print(v1, v2, v3)
+            else:
+                print("Data Column Assert: SUCCESS")
+            
 
 
 def main(ipv4, reactor_name, rsize, batch_name='test1'):
@@ -116,12 +159,9 @@ def outer_main():
     if not ipv4 or ipv4.lower() == 'none':
         ipv4 = None
         print("No ipv4 given, browse for local file")
-        from tkinter.filedialog import askopenfilename
         fn = askopenfilename(initialdir=_func_test_folder)
         if not fn:
-            print("Aborting")
-            import sys
-            sys.exit(-1) 
+            raise ValueError(fn)
             
     reactor_name = input("Enter reactor name: ")
     rsize = input("Enter reactor size: ")
@@ -134,10 +174,15 @@ def outer_main():
         main(ipv4, reactor_name, rsize, batch_name)
 
 if __name__ == '__main__':
-    try:
-        outer_main()
-    except:
-        import traceback
-        traceback.print_exc()
+    while True:
+        try:
+            outer_main()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        except KeyboardInterrupt:
+            sys.exit(0)
+        print()
         
+    # Unreachable
     input("Press Enter to Exit")

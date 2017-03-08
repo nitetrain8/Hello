@@ -7,21 +7,22 @@ Created in: PyCharm Community Edition
 
 """
 from collections import OrderedDict
-from os.path import exists as path_exists, split as path_split, splitext
+from os.path import split as path_split
 from os import makedirs
 import os
 from time import time, sleep
 from datetime import datetime
-from io import StringIO
 from pysrc.snippets.unique import unique_name
 from pysrc.snippets.safe_write import safe_pickle
+import abc
 
-from hello.hello3 import HelloApp, BadError, open_hello, OFF, AUTO, MAN
+from hello.hello3 import BadError, open_hello, OFF, AUTO, MAN
 from officelib.xllib.xladdress import cellRangeStr
 from officelib.xllib.xlcom import xlBook2, FormatChart
-from pysrc.logger import Logger, BuiltinLogger
+from pysrc.logger import BuiltinLogger
 from officelib.xllib.xlcom import HiddenXl
 from officelib.xllib.xlcom import CreateChart, PurgeSeriesCollection, CreateDataSeries
+from officelib.const import xlconst as xlc
 
 
 __author__ = 'Nathan Starkweather'
@@ -63,17 +64,18 @@ def _xl_rng_for_data(col, row_os, ws, xld):
 _minute = 60
 _hour = _minute * 60
 
-# class AgPIDInfo():
-#     """ PID configuration """
-#     def __init__(self, p, i, d):
-#         self.p = p
-#         self.i = i
-#         self.d = d
+class PIDInfo():
+    """ PID configuration """
+    __slots__ = "p i d beta alpha gamma linearity".split()
 
-#     def apply_settings(self, app):
-#         app.setconfig("Agitation", "P_Gain_(%/RPM)", self.p)
-#         app.setconfig("Agitation", "I_Time_(min)", self.i)
-#         app.setconfig("Agitation", "D Time (min)", self.d)
+    def __init__(self, p=1, i=1, d=0, beta=1, alpha=-1, gamma=0, linearity=1):
+        self.p = p
+        self.i = i
+        self.d = d
+        self.beta = beta       
+        self.alpha = alpha    
+        self.gamma = gamma     
+        self.linearity = linearity  
 
 
 class PIDError(Exception):
@@ -121,7 +123,7 @@ def _interruptable_sleep(n):
     while time() - start < n:
         sleep(1)
 
-import abc
+
 class Controller(abc.ABC):
     group = ""
     name = "Controller"
@@ -131,16 +133,16 @@ class Controller(abc.ABC):
         self.app = app
         self.gpmv = app.gpmv
         self.logger = logger
-    def set(self, mode, sp1=0, sp2=0):
+    def set(self, mode, sp1=0, sp2=None):
         self.app.login()
-        self.app.set_mode(self.group, mode, sp)
+        self.app.set_mode(self.group, mode, sp1, sp2)
     def auto(self, sp):
         self.logger.info("Setting %s to %d%s", self.name, sp, self.pvunit)
         self.set(AUTO, sp)
     def man(self, op, op2=None):
         self.logger.info("Setting %s to %d%s", self.name, op, self.manunit)
-        self.set(MAN, sp)
-    def off(self, sp=0):
+        self.set(MAN, op, op2)
+    def off(self):
         self.logger.info("Setting %s to Off", self.name)
         self.set(OFF)
     def getpv(self):
@@ -150,6 +152,10 @@ class Controller(abc.ABC):
         pv = group['pv']
         op = group['output']
         return pv, op 
+    def setconfig(self, group, setting, value):
+        self.logger.info("Setting %s %s to %s", group, setting, value)
+        self.app.login()
+        self.app.setconfig(group, setting, value)
 
 
 class AgController(Controller):
@@ -168,6 +174,7 @@ class TempController(Controller):
 
 class PIDTest():
     DATA_POLL_INTERVAL = 0.5
+    POLL_UPDATE_INTERVAL = 60  # seconds
     SHORT_NAME = "Default"
     ControllerClass = Controller
     CURRENT_PV = object()
@@ -181,7 +188,7 @@ class PIDTest():
     error_band = 1
     mintime = 180
 
-    def __init__(self, p, i, d, start_pv, sp, app_or_ipv4=None, logger=None, name=None, metadata=None):
+    def __init__(self, pid_info, start_pv, sp, app_or_ipv4=None, logger=None, name=None, metadata=None):
         """
         @param p: pgain
         @param i: itime
@@ -189,12 +196,19 @@ class PIDTest():
         @param sp: set point
         @param app_or_ipv4: HelloApp object, or IPV4 to pass to HelloApp constructor
         """
+
+        if isinstance(pid_info, tuple):
+            p, i, d = pid_info  # legacy
+            pid_info = PIDInfo(p=p, i=i, d=d)
+        elif isinstance(pid_info, PIDInfo):
+            pass
+        else:
+            raise TypeError(type(pid_info))
+
         self.xrng = None
         self.yrng = None
         self.namerng = None
-        self.p = p
-        self.i = i
-        self.d = d
+        self.pid_info = pid_info
         self.sp = sp
         self.passed = False
         self.data = []
@@ -211,10 +225,11 @@ class PIDTest():
         self.name = name or self.defaultname()
 
     def get_chart_key(self):
-        return self.p, self.i, self.d, self.SHORT_NAME
+        return self.pid_info.p, self.pid_info.i, self.pid_info.d, self.SHORT_NAME
 
     def defaultname(self):
-        return "%s-%s-%s-%s-%s" % (self.__class__.__name__, self.p, self.i, self.d, self.sp)
+        return "%s-%s-%s-%s-%s" % (self.__class__.__name__, self.pid_info.p, 
+                                    self.pid_info.i, self.pid_info.d, self.sp)
 
     def chartplot(self, chart):
         CreateDataSeries(chart, self.xrng, self.yrng, self.namerng)
@@ -231,9 +246,11 @@ class PIDTest():
     def make_header_data(self):
         data = [
             [self.name, "", "", ""],
-            ["P:", str(self.p), "Passed?", ("No", "Yes")[self.passed]],
-            ["I:", str(self.i), "SP:", str(self.sp)],
-            ["D:", str(self.d), "", ""]
+            ["P:", str(self.pid_info.p), "Passed?", ("No", "Yes")[self.passed]],
+            ["I:", str(self.pid_info.i), "SP:", str(self.sp)],
+            ["D:", str(self.pid_info.d), "Beta:", str(self.pid_info.beta)],
+            ["Alpha:", str(self.pid_info.alpha), "Gamma", str(self.pid_info.gamma)],
+            ["Linearity", str(self.pid_info.linearity), "", ""]
         ]
 
         # This algorithm adds each (key, value) pair of 
@@ -244,7 +261,7 @@ class PIDTest():
         # 
         # Data is added in order as returned by 
         # self.sorted_metadata()
-        idx = 1
+        idx = data[-1][-1] == "" == data[-1][-2]
         for k, v in self.sorted_metadata():
             if idx == 0:
                 data.append(["", "", "", ""])
@@ -256,12 +273,15 @@ class PIDTest():
             idx = 1 - idx  # flip flop 0 -> 1 -> 0
         return data
 
-    def plot(self, ws, col=1):
+    def plot(self, ws, col=1, skip=None):
 
         if self.data:
             xld = _flattened_data(self.data)
         else:
             raise BadError("Can't plot- no data!")
+
+        if skip and skip > 0:
+            xld = xld[::skip]
 
         cells = ws.Cells
         self.namerng = "='%s'!%s" % (ws.Name, cells(1, col).Address)
@@ -336,11 +356,13 @@ class PIDTest():
         settle_end = start + settle_time
         passed = True
         next_update = start
+        t = time()
         while True:
+            next_poll = t + self.DATA_POLL_INTERVAL
             pv, op = self.ctrl.getpvop()
             t = time()
             data.append((t - start, pv, op))
-            if not (settle_min < pv < settle_max):
+            if not settle_min < pv < settle_max:
                 settle_end = t + settle_time
                 if t > end:
                     passed = False
@@ -349,8 +371,9 @@ class PIDTest():
                 break
             if t > next_update:
                 self.logger.info("Update: PV: %.2f SP: %.2f Settle Remaining: %d Timeout: %d", pv, sp, settle_end - t, max(end - t, 0))
-                next_update += 60
-            sleep(self.DATA_POLL_INTERVAL)
+                next_update += self.POLL_UPDATE_INTERVAL
+            sleep(max(next_poll - t, 0))
+
         return passed
 
     def wait_for_min_time(self, data, start, mintime_end):
@@ -358,19 +381,19 @@ class PIDTest():
         if t > mintime_end:
             return
         self.logger.info("Waiting %d seconds to finish test", mintime_end - t)
-        next_update = t + 60
+        next_update = t + self.POLL_UPDATE_INTERVAL
         while t < mintime_end:
             pv, op = self.ctrl.getpvop()
             t = time()
             data.append((t - start, pv, op))
             sleep(self.DATA_POLL_INTERVAL)
             if t > next_update:
-                next_update += 60
+                next_update += self.POLL_UPDATE_INTERVAL
                 self.logger.info("Update: Waiting %d seconds to finish test.", mintime_end - t)
 
 
     def __repr__(self):
-        return "P:%.3f I:%.3f D:%.4f SP:%d" % (self.p, self.i, self.d, self.sp)
+        return "P:%.3f I:%.3f D:%.4f SP:%d" % (self.pid_info.p, self.pid_info.i, self.pid_info.d, self.sp)
     __str__ = __repr__
 
 # =====================================
@@ -461,6 +484,7 @@ class ManToManMixin():
 
 class AgPIDTest(PIDTest):
     ControllerClass = AgController
+    POLL_UPDATE_INTERVAL = 15  # seconds
 
     # test parameters
     settle_time = 120
@@ -471,19 +495,20 @@ class AgPIDTest(PIDTest):
     def setup_settings(self):
         self.logger.info("Setting PID Settings")
         self.app.login()
-        self.app.setconfig("Agitation", "P_Gain_(%/RPM)", self.p)
-        self.app.setconfig("Agitation", "I_Time_(min)", self.i)
-        self.app.setconfig("Agitation", "D_Time_(min)", self.d)
+        self.app.setconfig("Agitation", "P_Gain_(%/RPM)", self.pid_info.p)
+        self.app.setconfig("Agitation", "I_Time_(min)", self.pid_info.i)
+        self.app.setconfig("Agitation", "D_Time_(min)", self.pid_info.d)
+        self.app.setconfig("Agitation", "Beta", self.pid_info.beta)
 
 
 class TempPIDTest(PIDTest):
     ControllerClass = TempController
     def setup_settings(self):
         self.logger.info("Setting PID Settings")
-        self.app.login()
-        self.app.setconfig("Temperature", "P_Gain_(%/C)", self.p)
-        self.app.setconfig("Temperature", "I_Time_(min)", self.i)
-        self.app.setconfig("Temperature", "D_Time_(min)", self.d)
+        self.ctrl.setconfig("Temperature", "P_Gain_(%/C)", self.pid_info.p)
+        self.ctrl.setconfig("Temperature", "I_Time_(min)", self.pid_info.i)
+        self.ctrl.setconfig("Temperature", "D_Time_(min)", self.pid_info.d)
+        self.ctrl.setconfig("Temperature", "Beta", self.pid_info.beta)
 
 
 
@@ -507,6 +532,7 @@ class TempOffToAutoTest(TempPIDTest):
     error_band                  = 0.2
     mintime                     = 3 * _hour
     wait_for_cooling            = True
+    wait_for_cooling_sleep_time = 2 * _minute
     agitation_sp                = 12
 
     def setup_test(self):
@@ -514,8 +540,11 @@ class TempOffToAutoTest(TempPIDTest):
         self.app.setag(AUTO, self.agitation_sp)
         if self.wait_for_cooling:
             end = time() + self.pretest_stabilize_timeout
-            while time() < end and self.ctrl.getpv() > self.start_pv:
-                _interruptable_sleep(10)
+            pv = self.ctrl.getpv()
+            while time() < end and pv > self.start_pv:
+                _interruptable_sleep(self.wait_for_cooling_sleep_time)
+                self.logger.info("Update: Waiting for water to cool to from %.2f to <%.2f", pv, self.start_pv)
+                pv = self.ctrl.getpv()
             if time() > end:
                 raise TestFailure("Failed to cool to starting pv")
         # wait a bit before starting the test
@@ -553,8 +582,7 @@ class TempManToAutoTest(ManToAutoMixin, TempPIDTest):
 
     def setup_test(self):
         self.app.setag(AUTO, self.agitation_sp)
-        self.logger.info("Setting %s to AUTO %d %s and waiting until stable for %d seconds (%d second timeout)", 
-                                    self.ctrl.name, self.start_pv, self.ctrl.pvunit, self.pretest_stabilize, self.pretest_stabilize_timeout)
+        self.logger.info("Beginning test setup")
         self.ctrl.auto(self.start_pv)
         self.verify_setup_stable()
         pv, op = self.ctrl.getpvop()
@@ -572,12 +600,31 @@ class TempManToManTest(ManToManMixin, TempPIDTest):
         super().setup_test()
 
 
+def fmt_float(f, decimals=3):
+    if not f:
+        return "0"
+    f = str(f)
+    if "." not in f:
+        return f
+    else:
+        f = f.strip("0")
+        if f[-1] == ".":
+            f = f[:-1]
+        if f[0] == ".":
+            f = "0" + f
+        if "." in f:
+            if decimals > 0:
+                f = f[:f.find(".")+decimals+1]
+            else:
+                f = f[:f.find(".")]
+        return f
+
 class PIDRunner():
     """ Runner for many PID tests """
 
     _docroot = "C:\\Users\\Nathan\\Documents\\PBS\\PID Tuning\\"
 
-    def __init__(self, tests=(), wb_name=None, ignore_keyboardinterrupt=False):
+    def __init__(self, tests=(), wb_name=None, ignore_keyboardinterrupt=True):
 
         self.logger = BuiltinLogger("PID Test", path=self._docroot)
         self.ignore_keyboardinterrupt = ignore_keyboardinterrupt
@@ -593,6 +640,7 @@ class PIDRunner():
         self._ws = None
         self._chart = None
         self._chartmap = None
+        self.add_to_mru = True
 
         wb_name = wb_name or "PIDTest %s.xlsx" % datetime.now().strftime("%m-%d-%y %H-%M")
         self.set_wb_name(wb_name)
@@ -615,10 +663,6 @@ class PIDRunner():
         self._wb.Save()
 
     def runall(self):
-        """
-        Run all tests in container. If Error or interrupt occurs,
-        test is *not* added to the list of completed tests.
-        """
         ntests = len(self._tests)
         ki = 0
 
@@ -627,14 +671,15 @@ class PIDRunner():
             try:
                 t.run()
             except KeyboardInterrupt:
-                self.logger.error("Got keyboard interrupt, skipping test.")
                 if not self.ignore_keyboardinterrupt:
+                    self.logger.error("Got keyboard interrupt, skipping test.")
                     ki += 1
                     if ki >= 2:
                         rsp = input("Got more keyboard interrupts. Type 'quit' to quit.")
                         if rsp.lower() == 'quit':
                             raise
                 else:
+                    self.error("Aborting Run.")
                     raise
             except SystemExit:
                 self.logger.error("Got system interrupt, aborting run.", exc_info=1)
@@ -648,11 +693,10 @@ class PIDRunner():
         """
         Initialize the excel instance used by other functions
         """
-        if self._xl is None:
-            self._full_xl_name = unique_name(self._full_xl_name)
-            self._xl, self._wb = xlBook2(None, True, False)
-            self._wb.SaveAs(self._full_xl_name, AddToMru=True)
-            self._ws = self._wb.Worksheets(1)
+        self._full_xl_name = unique_name(self._full_xl_name)
+        self._xl, self._wb = xlBook2(None, True, False)
+        self._wb.SaveAs(self._full_xl_name, AddToMru=self.add_to_mru)
+        self._ws = self._wb.Worksheets(1)
         
 
     def chartbypid(self, ifpassed=False):
@@ -677,11 +721,12 @@ class PIDRunner():
         # loop again and format + move charts to new sheets
         for key, chart in groups.items():
             p, i, d, other = key
-            name = "P%sI%sD%s %s" % (str(p), str(i), str(d), other)
+            name = "P%sI%sD%s %s" % (fmt_float(p), fmt_float(i), fmt_float(d), other)
             name2 = "P: %s I: %s D:%s %s" % (p, i, d, other)
             title = "PID Test: " + name2
             self.logger.info("Formatting Chart: %s", name2)
             try:
+                chart.ApplyLayout(8)
                 FormatChart(chart, ChartTitle=title, xAxisTitle="Time (s)", yAxisTitle="PV", Legend=True)
                 chart.Location(1, name)
                 axes = chart.Axes(AxisGroup=2)  # xlPrimary
@@ -692,7 +737,7 @@ class PIDRunner():
 
         self._chartmap = groups
 
-    def plotall(self):
+    def plotall(self, skip=None):
         """
         Despite the name, this simply copies data into the
         excel sheet, according to PIDTest.plot() method.
@@ -707,7 +752,7 @@ class PIDRunner():
             for n, t in enumerate(self._tests, 1):
                 self.logger.info("Copying data for test %d of %d", n, ntests)
                 try:
-                    col += t.plot(self._ws, col)
+                    col += t.plot(self._ws, col, skip)
                 except Exception:
                     self.logger.error("Error copying data for test #%d", n, exc_info=1)
             self.logger.info("Done copying data for %d tests.", ntests)
@@ -732,7 +777,7 @@ class PIDRunner():
 
     def _new_chart(self):
         self.logger.info("Initializing chart")
-        chart = CreateChart(self._ws)
+        chart = CreateChart(self._ws, xlc.xlXYScatterLinesNoMarkers)
         PurgeSeriesCollection(chart)
         return chart
 

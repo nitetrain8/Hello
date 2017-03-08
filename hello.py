@@ -472,10 +472,13 @@ class HelloApp(BaseHelloApp):
         rsp = self.send_request(query)
         return self._do_set_validate(rsp)
 
-    def set_mode(self, group, mode, val):
-        query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
+    def set_mode(self, group, mode, val1, val2=None):
+        if val2 is None:
+            query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val1)
+        else:
+            query = "?&call=set&group=%s&mode=%s&val1=%s&val2=%s" % (group, mode, val1, val2)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp.read())
+        return self._do_set_validate(rsp)
 
     def getDORAValues(self):
         query = "?&call=getDORAValues"

@@ -162,20 +162,22 @@ OFF = 2
 
 
 class BaseHelloApp(_hello._BaseHelloApp):
-    _headers = {}
+    headers = {}
     ConnectionFactory = HTTPSSession
 
-    def __init__(self, ipv4, headers=None, retry_count=3, timeout=5):
+    def __init__(self, ipv4, headers=None, retry_count=3, timeout=5, verbose_errors=False, logger=None):
         """
         @param ipv4: ipv4 address to connect to (string eg 192.168.1.1:80)
         @param headers: headers to pass on each http connection
         @param retry_count: how many times to retry a connection on failure
                             set to 0 to try forever.
         """
-        self.headers = self._headers.copy()
+        super().__init__()
+        self.headers = self.headers.copy()
         self.headers.update(headers or {})
         self._urlbase = "/webservice/interface/"
         self.retry_count = retry_count
+        self.verbose_errors = verbose_errors
 
         self._ipv4 = ipv4
         
@@ -183,10 +185,7 @@ class BaseHelloApp(_hello._BaseHelloApp):
         self._connection.connect()
 
         self._parse_rsp = parse_rsp
-        self._logger = logging.Logger(self._calc_logger_name(ipv4))
-
-    def _calc_logger_name(self, ipv4):
-        return "%s: %s" % (self.__class__.__name__, ipv4)
+        self._logger = logger or logging.Logger("%s: %s" % (self.__class__.__name__, ipv4))
 
     def _init_connection(self, host, port=None, timeout=5):
         return self.ConnectionFactory(host, port, timeout=timeout)
@@ -203,34 +202,6 @@ class BaseHelloApp(_hello._BaseHelloApp):
     def ipv4(self):
         return self._ipv4
 
-    def request_from_call_and_args(self, call, args=()):
-        """
-        same as below, but 'call' is a separate argument
-        """
-        if args:
-            query = ''.join(("?&call=", call, "&", "&".join("%s=%s" % a for a in args)))
-        else:
-            query = "?&call=" + call
-        return self.send_request(query)
-
-    def request_from_kwargs(self, **kwargs):
-        query = "?" + "&".join("%s=%s" % item for item in kwargs.items())
-        return self.send_request(query)
-
-    def request_from_args(self, args):
-        """
-        @param args: tuple of (key, value) pairs to build a query string
-        @type args: (T, T)
-        @return: http.client.HTTPResponse
-        @rtype: http.client.HTTPResponse
-
-        Convenience for building a query string and calling hello.
-        Intended for low-level public access.
-        """
-
-        query = "?&" + "&".join("=".join(a) for a in args)
-        return self.send_request(query)
-
     def _do_request(self, url):
         if self.retry_count > -1:
             it = range(self.retry_count + 1)
@@ -244,13 +215,16 @@ class BaseHelloApp(_hello._BaseHelloApp):
                 self.reconnect()
             except Exception as e:
                 err = e
-                msg = "%s(%s)" % (err.__class__.__name__, ", ".join(str(a) for a in err.args))
-                self._logger.warn("=====================================")
-                self._logger.warn("ERROR OCCURRED DURING REQUEST")
-                self._logger.warn("IPV4 ADDRESS: %s", self._ipv4)
-                self._logger.warn("REQUESTED URL: <%s>", url)
-                self._logger.warn("MESSAGE: %s" % msg)
-                self._logger.warn("=====================================")
+                if self.verbose_errors:
+                    msg = "%s(%s)" % (err.__class__.__name__, ", ".join(str(a) for a in err.args))
+                    self._logger.warning("=====================================")
+                    self._logger.warning("ERROR OCCURRED DURING REQUEST")
+                    self._logger.warning("IP ADDRESS: %s", self._ipv4)
+                    self._logger.warning("REQUESTED URL: <%s>", url)
+                    self._logger.warning("MESSAGE: %s", msg)
+                    self._logger.warning("=====================================")
+                else:
+                    self._logger.warning("Error processing request: %s", str(e))
                 self.reconnect()
         raise err
 
@@ -262,14 +236,30 @@ class BaseHelloApp(_hello._BaseHelloApp):
         rsp = self._do_request(url)
         cookie = rsp.headers.get("Set-Cookie")
         if cookie:
-            self.headers['Cookie'] = cookie.split(';', 1)[0]
+            c = cookie.split(';', 1)[0]  # works on empty strings too
+            if c:
+                self.headers['Cookie'] = c
+            else:
+                del self.headers['Cookie']
         return rsp
+
+    def call(self, call, **kw):
+        # ensure call is the first parameter argument
+        # The webserver doesn't require this, but it 
+        # Historically made life easier when debugging
+        # so continue to follow convention here. 
+        args = "&".join("%s=%s"%(k,v) for k, v in kw.items())
+        query = "?call=%s%s%s" % (call, "&" if args else "", args)
+        return self.send_request(query)
+
+    def call_validate(self, call, **kw):
+        json = kw.get('json', False)
+        rsp = self.call(call, **kw)
+        return self._validate_rsp(rsp, json)
 
     def send_request(self, query):
         """
-        @param query: query string to call hello ("?&call=....")
         @type query: str
-        @return: http response object
         @rtype: http.client.HTTPResponse
 
         Call hello using the provided query string.
@@ -278,58 +268,143 @@ class BaseHelloApp(_hello._BaseHelloApp):
         url = self._urlbase + query
         return self._send_request_raw(url)
 
-    def _do_set_validate(self, rsp):
-        """
-        Quickly validate that a set call returned a successful response.
-        """
-        try:
-            root = self._parse_rsp(rsp)
-        except:
-            print(rsp.read())
-            raise
-        result = root[0]
-        if not result.text == "True":
-            if root[1].text.startswith("No user associated"):
-                raise NotLoggedInError(root[1].text)
-            else:
-                raise ServerCallError(root[1].text)
-        return True
+    def _validate_rsp(self, rsp, json):
+        if json:
+            data = json_loads(rsp.read().decode())
+            return self._verify_json(data)
+        else:
+            data = HelloXML(rsp)
+            return self._verify_xml(data)
 
     def _verify_xml(self, xml):
         if not xml.result:
-            if isinstance(xml.data, str):
-                if xml.data.startswith("No user associated"):
-                    raise NotLoggedInError(xml.data)
-                raise ServerCallError(xml.data)
-            else:
-                raise ServerCallError(xml.data)
+            raise self._verify_fail(xml.data)
+        return xml
+
+    def _verify_json(self, json):
+        """ The json reply content is non-normalized
+        for different API calls and responses. In 
+        particular, fail response may be "result" "message"
+        structure with "result" == False and "message"
+        an error message, while the success response 
+        may just be the body of the json itself. 
+
+        This is stupid as shit but I have to deal with it. 
+        """
+        noresult = object()
+        result = json.get('result', noresult)
+        if result is noresult:
+            return json
+        if not result:
+            raise self._verify_fail(json['message'])
+        return json
+    
+    def _verify_fail(self, message):
+        """ Return exception class to be raised by caller.
+        (Save the frames!)
+        """
+        if isinstance(message, str):
+            if message.startswith("No user associated"):
+                return NotLoggedInError(message)
+            return ServerCallError(message)
+        else:
+            return ServerCallError(message)
 
 
 def _retry_on_auth_fail(func):
     def wrapper(self, *args, **kw):
+        err = None
         try:
             rv = func(self, *args, **kw)
-        except NotLoggedInError:
-            pass
+        except NotLoggedInError as e:
+            err = e
         else:
             return rv
         if self._user and self._password:
             self.login(self._user, self._password)
             return func(self, *args, **kw)
+        else:
+            raise err
     return wrapper
+
+
+class HelloAPI(BaseHelloApp):
+    def login(self, user, pwd):
+        return self.call_validate('login', val1=user, val2=pwd, json=True)
+
+    def logout(self):
+        return self.call_validate('logout', json=True)
+
+    def startbatch(self, name):
+        return self.call_validate('setStartBatch', val1=name)
+
+    def endbatch(self):
+        return self.call_validate('setendbatch')
+
+    def getAlarms(self, mode, nalarms, id):
+        return self.call_validate('getAlarms', mode=mode, val1=nalarms, val2=id)
+
+    def getAlarmList(self):
+        return self.call_validate('getAlarmList')
+
+    def getUnAckCount(self):
+        return self.call_validate('getUnAckCount')
+
+    def getReport(self, mode, type, val1, val2, timeout):
+        # Thanks, Chen!
+        url = "/webservice/getReport/?&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
+                (mode, type, val1, val2, timeout)
+        rsp = self._send_request_raw(url)
+        return self._validate_rsp(rsp, False)
+
+    def getBatches(self):
+        return self.call_validate('getBatches')
+
+    def getfile(self, filename):
+        # Thanks, Chen! (I didn't do this)
+        url = "/webservice/getfile/?&getfile=" + filename
+        rsp = self._send_request_raw(url)
+        return rsp.read()
+
+    def set(self, group, mode, val1, val2):
+        if val2 is None:
+            return self.call_validate('set', group=group, mode=mode, val1=val1)
+        else:
+            return self.call_validate('set', group=group, mode=mode, val1=val1, val2=val2)
+
+    def getDORAValues(self):
+        return self.call_validate('getDORAValues')
+
+    def getMainValues(self):
+        return self.call_validate('getMainValues', json=True)
+
+    def setconfig(self, group, name, val):
+        return self.call_validate('setconfig', group=group, name=name, val=val)
+
+    def setpumpa(self, mode, val):
+        return self.call_validate('setpumpa', val1=mode, val2=val)
+
+    def setpumpb(self, mode, val):
+        return self.call_validate('setpumpb', val1=mode, val2=val)
+
+    def setpumpc(self, mode, val):
+        return self.call_validate('setpumpc', val1=mode, val2=val)
+
+    def setpumpsample(self, mode, val):
+        return self.call_validate('setpumpsample', val1=mode, val2=val)
 
 
 class HelloApp(BaseHelloApp):
 
-    def __init__(self, ipv4, headers=None, retry_count=3, timeout=socket.getdefaulttimeout()):
-        super().__init__(ipv4, headers, retry_count, timeout)
+    def __init__(self, ipv4, headers=None, retry_count=3, timeout=socket.getdefaulttimeout(), verbose_errors=False):
+        super().__init__(ipv4, headers, retry_count, timeout, verbose_errors)
         self._user = ""
         self._password = ""
 
     def login(self, user='user1', pwd='12345'):
         query = "?&call=login&val1=%s&val2=%s" % (user, pwd)
         rsp = self.send_request(query)
-        if self._do_set_validate(rsp):
+        if self._validate_rsp(rsp, False):
             self._user = user
             self._password = pwd
             return True
@@ -338,18 +413,18 @@ class HelloApp(BaseHelloApp):
     def logout(self):
         query = "?&call=logout"
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def startbatch(self, name):
         name = name.replace(" ", "+")
         query = "?&call=setStartBatch&val1=%s" % name
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def endbatch(self):
         query = "?&call=setendbatch"
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def getAlarms(self, mode='first', val1='100', val2='1'):
         query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
@@ -375,7 +450,7 @@ class HelloApp(BaseHelloApp):
             raise ServerCallError(xml.msg)
         return int(xml.data)
 
-    def getReport(self, mode, type, val1, val2='', timeout=120000, suppress=True):
+    def getReport(self, mode, type, val1, val2='', timeout=120000):
         """
         @param mode: 'byBatch' or 'byDate'
         @param type: data, recipe steps, errors, or user events
@@ -412,6 +487,12 @@ class HelloApp(BaseHelloApp):
         fname = self.getReport('byBatch', 'process_data', val1)
         return self.getfile(fname)
 
+    def getreport_bydate(self, type, d1, d2):
+        s1 = int(d1.timestamp())
+        s2 = int(d2.timestamp())
+        fname = self.getReport('byDate', type, s1, s2)
+        return self.getfile(fname)
+
     def getfile(self, fname):
         # chen fucked up the url on the new protocol so bad I had to
         # restructure helloapp to sensibly work with it
@@ -438,7 +519,7 @@ class HelloApp(BaseHelloApp):
         else:
             query = "?&call=set&group=do&mode=%s&val1=%s&val2=%s" % (mode, n2, o2)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def setph(self, mode, co2, base=None):
         # Val1 = CO2 sp (or auto sp)
@@ -448,29 +529,29 @@ class HelloApp(BaseHelloApp):
         else:
             query = "?&call=set&group=ph&mode=%s&val1=%s&val2=%s" % (mode, co2, base)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def setmg(self, mode, val):
         query = "?&call=set&group=maingas&mode=%s&val1=%s" % (mode, val)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def setag(self, mode, val):
         query = "?&call=set&group=agitation&mode=%s&val1=%s" % (mode, val)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def settemp(self, mode, val):
         query = "?&call=set&group=temperature&mode=%s&val1=%s" % (mode, val)
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
-    def set_mode(self, group, mode, val, val2=""):
+    def set_mode(self, group, mode, val, val2=None):
         query = "?&call=set&group=%s&mode=%s&val1=%s" % (group, mode, val)
-        if val2:
+        if val2 is not None:
             query += "&val2=%s"%val2
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def getDORAValues(self):
         query = "?&call=getDORAValues"
@@ -512,23 +593,23 @@ class HelloApp(BaseHelloApp):
         name = sanitize_url(name)
         query = "?&call=setconfig&group=%s&name=%s&val=%s" % (group, name, str(val))
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def setpumpa(self, mode=0, val=0):
         query = "?&call=setpumpa&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
+        return self._validate_rsp(self.send_request(query), False)
 
     def setpumpb(self, mode=0, val=0):
         query = "?&call=setpumpb&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
+        return self._validate_rsp(self.send_request(query), False)
 
     def setpumpc(self, mode=0, val=0):
         query = "?&call=setpumpc&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
+        return self._validate_rsp(self.send_request(query), False)
 
     def setpumpsample(self, mode=0, val=0):
         query = "?&call=setpumpsample&val1=%d&val2=%d" % (mode, val)
-        return self._do_set_validate(self.send_request(query))
+        return self._validate_rsp(self.send_request(query), False)
 
     def trycal(self, sensor, val1, target1, val2=None, target2=None):
         """
@@ -538,7 +619,7 @@ class HelloApp(BaseHelloApp):
         @param val2: value returend by getRawValue()
         @param target2: pv that val1 actually corresponds to (value entered by user)
         """
-        if val2 is None or target2 is None:
+        if val2 or target2:
             # two point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s&val2=%s&target2=%s" % (sensor, val1, target1,
                                                                                        val2, target2)
@@ -547,7 +628,7 @@ class HelloApp(BaseHelloApp):
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s" % (sensor, val1, target1)
 
         rsp = self.send_request(query)
-        return self._do_set_validate(rsp)
+        return self._validate_rsp(rsp, False)
 
     def getRawValue(self, sensor):
         query = "?&call=getRawValue&sensor=" + sensor
@@ -618,9 +699,9 @@ class HelloApp(BaseHelloApp):
         return xml.data.split(",")
         
     def getTrendData(self, span, group):
-        query = "?&call=getTrendData&spam=%s&group=%s&json=1" % (span, group)
+        query = "?&call=getTrendData&span=%s&group=%s&json=1" % (span, group)
         rsp = self.send_request(query)
-        return json_loads(rsp.read().decode('utf-8'))
+        return self._validate_rsp(rsp, True)
 
     def __repr__(self):
         h = self._connection.host or ""
@@ -666,8 +747,8 @@ class HelloXML():
         self.result = self.parse_dict['Result'] == 'True'
         self.data = self.msg = self.parse_dict['Message']
 
-        if self.msg == 'True':
-            raise TrueError("Expected response, got \"True\"")
+        # if self.msg == 'True':
+        #     raise TrueError("Expected response, got \"True\"")
 
         self._parsed = True
 
