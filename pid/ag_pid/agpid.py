@@ -306,6 +306,21 @@ class PIDTest():
         
         return cols_used
 
+    def start_batch(self):
+        self.app.login()
+        batches = self.app.getbatches()
+        i = 1
+        fmt = "pid #%d"
+        s = fmt % i
+        while s in batches.names_to_batches:
+            i += 1
+            s = fmt % i
+        self.app.startbatch(s)
+
+    def end_batch(self):
+        self.app.login()
+        self.app.endbatch()
+
     def run(self):
         self.logger.info("Beginning test run for %s", self.defaultname())
 
@@ -316,13 +331,15 @@ class PIDTest():
         settle_min, settle_max = self.get_settle_margins()
         start = time()
         mintime_end = start + self.mintime
-        end = start + self.timeout    
+        end = start + self.timeout   
+        self.start_batch() 
         self.start_test()
    
         # execute test
         self.passed = self.wait_for_settle(self.data, start, end, settle_min, 
                             settle_max, self.settle_time, self.sp)
         self.wait_for_min_time(self.data, start, mintime_end)
+        self.end_batch()
         self.logger.info("Finished Test")
 
     def setup_settings(self):
@@ -431,7 +448,7 @@ class AutoToAutoMixin():
 
 class ManToAutoMixin():
     SHORT_NAME = "M2A"
-
+    pretest_stabilize_timeout = 180
     def setup_test(self):
         self.logger.info("Setting %s to AUTO %d %s and waiting until stable for %d seconds (%d second timeout)", 
                                     self.ctrl.name, self.start_pv, self.ctrl.pvunit, self.pretest_stabilize, self.pretest_stabilize_timeout)
@@ -439,7 +456,7 @@ class ManToAutoMixin():
         _interruptable_sleep(5)
         self.ctrl.auto(self.start_pv)
         self.verify_setup_stable()
-        op, pv = self.ctrl.getpvop()
+        pv, op = self.ctrl.getpvop()
         self.logger.info("Setting %s to MAN at output (%.2f) for PV (%.1f %s)", 
                             self.ctrl.name, op, pv, self.ctrl.pvunit)
         self.ctrl.man(op)
@@ -453,15 +470,15 @@ class ManToAutoMixin():
 
 class ManToManMixin():
     SHORT_NAME = "M2M"
-
+    auto_sleep = 60
     def setup_test(self):
         self.ctrl.off()
         _interruptable_sleep(5)
         self.ctrl.auto(self.start_pv)
-        _interruptable_sleep(30)
+        _interruptable_sleep(self.auto_sleep)
         if abs(self.ctrl.getpv() - self.start_pv) > 1:
             raise ValueError("Failed to stabilize %s during setup_test", self.ctrl.name)
-        _, op = self.ctrl.getpvop
+        _, op = self.ctrl.getpvop()
         self.logger.info("Setting %s to MAN at output (%.2f) for PV (%d %s)" % (self.ctrl.name, op, self.start_pv, self.ctrl.pvunit))
         self.ctrl.man(op)
         _interruptable_sleep(5)  # ensure change is visible to operator on bioreactor
@@ -679,7 +696,7 @@ class PIDRunner():
                         if rsp.lower() == 'quit':
                             raise
                 else:
-                    self.error("Aborting Run.")
+                    self.logger.error("Aborting Run.")
                     raise
             except SystemExit:
                 self.logger.error("Got system interrupt, aborting run.", exc_info=1)

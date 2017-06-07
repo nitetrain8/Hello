@@ -137,14 +137,14 @@ class HTTPSSession():
         if port:
             self._base += ":%d" % port
         self.sess = requests.Session()
-        self._timeout = timeout
+        self.timeout = timeout
 
         # For public access (api compatibility)
         self.host = host
         self.port = port
     def do_request(self, meth, url, body=None, headers=None):
         url = self._base + url
-        rsp = self.sess.request(meth, url, body, None, timeout=self._timeout, verify=False)
+        rsp = self.sess.request(meth, url, body, None, timeout=self.timeout, verify=False)
         # XXX Sloppy. Refactor HelloApp to not use read()
         file = io.BytesIO(rsp.content)
         rsp.read = file.read
@@ -198,6 +198,11 @@ class BaseHelloApp(_hello._BaseHelloApp):
         self._connection.close()
         self._connection.connect()
 
+    def settimeout(self, timeout):
+        if not isinstance(timeout, int) or timeout < 0:
+            raise ValueError(timeout)
+        self._connection.timeout = timeout
+
     @property
     def ipv4(self):
         return self._ipv4
@@ -223,8 +228,6 @@ class BaseHelloApp(_hello._BaseHelloApp):
                     self._logger.warning("REQUESTED URL: <%s>", url)
                     self._logger.warning("MESSAGE: %s", msg)
                     self._logger.warning("=====================================")
-                else:
-                    self._logger.warning("Error processing request: %s", str(e))
                 self.reconnect()
         raise err
 
@@ -292,11 +295,12 @@ class BaseHelloApp(_hello._BaseHelloApp):
         This is stupid as shit but I have to deal with it. 
         """
         noresult = object()
-        result = json.get('result', noresult)
+        result = json.get('Result', noresult)
+        assert 'result' not in json and 'message' not in json, json
         if result is noresult:
             return json
         if not result:
-            raise self._verify_fail(json['message'])
+            raise self._verify_fail(json['Message'])
         return json
     
     def _verify_fail(self, message):
@@ -394,6 +398,18 @@ class HelloAPI(BaseHelloApp):
         return self.call_validate('setpumpsample', val1=mode, val2=val)
 
 
+def lowercase_methods(cls):
+    from types import FunctionType
+    lower = {}
+    for k,v in cls.__dict__.items():
+        if isinstance(v, FunctionType) and k[0] != "_":
+            lower[k.lower()] = v
+    for k, v in lower.items():
+        setattr(cls, k, v)
+    return cls
+
+
+@lowercase_methods
 class HelloApp(BaseHelloApp):
 
     def __init__(self, ipv4, headers=None, retry_count=3, timeout=socket.getdefaulttimeout(), verbose_errors=False):
@@ -402,13 +418,9 @@ class HelloApp(BaseHelloApp):
         self._password = ""
 
     def login(self, user='user1', pwd='12345'):
-        query = "?&call=login&val1=%s&val2=%s" % (user, pwd)
+        query = "?&call=login&val1=%s&val2=%s&json=1" % (user, pwd)
         rsp = self.send_request(query)
-        if self._validate_rsp(rsp, False):
-            self._user = user
-            self._password = pwd
-            return True
-        return False
+        return self._validate_rsp(rsp, True)
 
     def logout(self):
         query = "?&call=logout"
@@ -424,7 +436,13 @@ class HelloApp(BaseHelloApp):
     def endbatch(self):
         query = "?&call=setendbatch"
         rsp = self.send_request(query)
-        return self._validate_rsp(rsp, False)
+        xml = HelloXML(rsp.read())
+        if not xml.result:
+            if "no batch currently running" in xml.data.lower():
+                return True
+            else:
+                return self._verify_xml(xml)
+        return True
 
     def getAlarms(self, mode='first', val1='100', val2='1'):
         query = "?&call=getAlarms&mode=%s&val1=%s&val2=%s" % (mode, val1, val2)
@@ -472,9 +490,7 @@ class HelloApp(BaseHelloApp):
         query = "?&call=getBatches&loader=Loading+batches..."
         rsp = self.send_request(query)
         xml = BatchListXML(rsp)
-        if not xml.result:
-            raise ServerCallError(xml.data)
-        return xml
+        return self._verify_xml(xml)
 
     def getreport_byname(self, type, name):
         return self.getReport('byBatch', type, name)
@@ -682,13 +698,17 @@ class HelloApp(BaseHelloApp):
         rsp = self.send_request(query)
         xml = HelloXML(rsp)
         self._verify_xml(xml)
-        # apparently Hello works just fine with either
-        # of these, so the server can send back either one
-        # check here so that we return the correct key. 
+        # James renamed the clusters to SV_Air
+        # and SV_Mag to make it easier for him
+        # to keep track of. The "proper" solution
+        # would be to just return the proper XML 
+        # element when parsing. The easiest solution
+        # is to just check for the key, since conversion
+        # from XML to dict occurs upstream. 
         try:
-            return xml.data['System Variables']
+            return xml.data['System_Variables_Mag']
         except KeyError:
-            return xml.data['System_Variables']
+            return xml.data['System_Variables_Air']
 
     def getRecipes(self, loader="Loading+recipes"):
         query = "?&call=getRecipes&loader=" + loader
@@ -736,6 +756,7 @@ class HelloXML():
             'String': self.parse_string,
             'Boolean': self.parse_bool,
             'SGL': self.parse_float,
+            'Array': self.parse_array
         }
 
     def _init(self, root):
@@ -816,6 +837,7 @@ class HelloXML():
         name = e[0].text
         self.parse_children(e[2:], val)
         ns[name] = val
+    parse_array = parse_cluster
 
 
 def _parse_date(s):
@@ -878,49 +900,76 @@ class BatchListXML(HelloXML):
     a different parsing scheme, and its own class.
     """
 
-    def _get_parse_types(self):
-        rv = HelloXML._get_parse_types(self)
-        rv['Array'] = types.MethodType(HelloXML.parse_cluster, self)
-        return rv
-
     def _init(self, root):
 
         self._parsed = False
-        data = self.begin_parse(root)
 
-        # Bad things happen if this code tries to proceed
-        # with a TrueBug response, so raise an error here.
-        if data['Reply']['Message'] == 'True':
-            raise TrueError()
-
-        self.parse_dict = data
-        self.reply = data['Reply']
-        self.result = self.reply['Result'] == 'True'
-
-        if self.result:
-            ids_to_batches = self.reply['Message']['Batches (cluster)']
-
-            # map names <-> ids
-            # note that many batches may have the same name.
-            # Newer names override older names,
-            # where 'newer' means 'higher id'
-            names_to_batches = {}
-            for entry in ids_to_batches.values():
-                name = entry["Name"]
-                id = int(entry['ID'])
-                if name in names_to_batches:
-                    if id > int(names_to_batches[name]['ID']):
-                        names_to_batches[name] = entry
-                else:
-                    names_to_batches[name] = entry
-
-            self.names_to_batches = names_to_batches
-            self.ids_to_batches = self.data = OrderedDict(sorted(ids_to_batches.items()))
-            self.max_id = max(self.ids_to_batches.keys())
+        # getbatches can send a zero sized array
+        # with a single empty batch element (???)
+        # so we have to specially handle it, because
+        # fuck labview.
+        dsize = root.find("./Message/Array/Dimsize")
+        if dsize is not None and dsize.text == '0':
+            self.names_to_batches = {}
+            self.ids_to_batches = {}
+            self.max_id = None
+            self.parse_dict = {}
+            self.result = True
             self._parsed = True
+            self.data = {}
         else:
-            self.names_to_batches = self.ids_to_batches = {}
-            self.data = self.reply['Message']
+            data = self.begin_parse(root)
+
+            # Bad things happen if this code tries to proceed
+            # with a TrueBug response, so raise an error here.
+            if data['Reply']['Message'] == 'True':
+                raise TrueError()
+
+            self.parse_dict = data
+            self.reply = data['Reply']
+            self.result = self.reply['Result'] == 'True'
+
+            if self.result:
+                ids_to_batches = self.reply['Message']['Batches (cluster)']
+
+                # map names <-> ids
+                # note that many batches may have the same name.
+                # Newer names override older names,
+                # where 'newer' means 'higher id'
+                names_to_batches = {}
+                for entry in ids_to_batches.values():
+                    name = entry["Name"]
+                    id = int(entry['ID'])
+                    if name in names_to_batches:
+                        if id > int(names_to_batches[name]['ID']):
+                            names_to_batches[name] = entry
+                    else:
+                        names_to_batches[name] = entry
+
+                self.names_to_batches = names_to_batches
+                self.ids_to_batches = self.data = OrderedDict(sorted(ids_to_batches.items()))
+                self.max_id = max(self.ids_to_batches.keys())
+                self._parsed = True
+            else:
+                self.names_to_batches = self.ids_to_batches = {}
+                self.data = self.reply['Message']
+
+    def getbatches(self):
+        return list(self.ids_to_batches.values())
+
+    def __getitem__(self, v):
+        return self.get(v)
+
+    def get(self, key):
+        try:
+            return self.names_to_batches[key]
+        except KeyError:
+            pass
+        try:
+            return self.ids_to_batches[key]
+        except KeyError:
+            pass
+        raise KeyError(key)
 
     def getdata(self):
         if self._parsed:

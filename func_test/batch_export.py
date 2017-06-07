@@ -8,28 +8,37 @@ Created in: PyCharm Community Edition
 """
 __author__ = 'Nathan Starkweather'
 
-from hello.hello import HelloApp
+from hello import hello, hello3
 import os
 import officelib.const
 from officelib.xllib import xlcom, xladdress
 from tkinter.filedialog import askopenfilename
 import sys
 import datetime
-
+from scripts import wlan
+import requests
 
 _func_test_folder = "\\\\PBSStation\\PBSCloudShare\\(4) Manufacturing & Operations\\Functional Testing"
 _backup_folder = os.path.join(os.path.abspath(os.path.expanduser("~")), "Documents", "PBS", "Local Functional Testing")
 
+def swap_wifi(nw):
+    print("Changing Wifi to %r" % nw)
+    wlan.ensure_wifi(nw)
+
 class BatchExporter():
-    def __init__(self, ipv4, reactor_name, rsize):
+    def __init__(self, ipv4, reactor_name, rsize, version=3):
         self.ipv4 = ipv4
         self.reactor_name = reactor_name
         self.rsize = rsize
         if ipv4:
             print("Connecting to ", ipv4, "...")
-            self.app = HelloApp(ipv4)
+            if version == 2:
+                self.app = hello.HelloApp(ipv4)
+            else:
+                self.app = hello3.HelloApp(ipv4)
         else:
             self.app = None
+        self.current_network = wlan.get_current_wifi()
 
     def _temp_unique_name(self, batch_name):
         i = ""
@@ -50,7 +59,7 @@ class BatchExporter():
         return path, fname
 
     def _save_temp(self, batch_name, report):
-
+        swap_wifi("PBSBIOTECH")
         path, fname = self._temp_unique_name(batch_name)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -62,10 +71,27 @@ class BatchExporter():
         tmp = self._save_temp(batch_name, report)
         self._do_xl_import(tmp)
 
+    def login(self):
+        print("Attempting to login...")
+        self.app.settimeout(5)
+        self.app.retry_count = 2
+        try:
+            self.app.login('pbstech', '727246')
+        except requests.exceptions.ConnectTimeout:
+            if self.current_network == "PBSBIOTECH":
+                nw = "pbstech"
+            else:
+                nw = "PBSBIOTECH"
+            print("Bioreactor not found! Checking other network...")
+            swap_wifi(nw)
+            self.app.login('pbstech', '727246')
+        self.app.settimeout(30)
+        self.app.retry_count = 3
+
     def export(self, batch_name):
         if not self.app:
             raise ValueError("Error- no app!")
-        self.app.login('pbstech', '727246')
+        self.login()
         if self.app.batchrunning():
             print("Stopping running batch...")
             self.app.endbatch()
@@ -73,6 +99,8 @@ class BatchExporter():
         report = self.app.getdatareport_bybatchname(batch_name)
         print("Analyzing File...")
         self.analyze(batch_name, report)
+        if wlan.get_current_wifi() != self.current_network:
+            swap_wifi(self.current_network)
 
     def _do_xl_import(self, tmpname):
         xl, wb, ws, cells = xlcom.xlObjs(tmpname, visible=False)
@@ -106,12 +134,18 @@ class BatchExporter():
                         break
                 else:
                     if not isinstance(v1, datetime.datetime):
+                        if (c1.Offset(0, 1).Value != "Batch Name") or (c2.Offset(0, 1).Value != "Created By"):
+                            fail()
+                    else:
+                        try:
+                            float(v2)
+                        except Exception:
+                            fail()
+                if v3 is not None: 
+                    if (c1.Offset(0, 1).Value != "Batch Name") or (c2.Offset(0, 1).Value != "Created By"):
                         fail()
-                    try:
-                        float(v2)
-                    except Exception:
-                        fail()
-                if v3 is not None: fail()
+                    else:
+                        break
 
                 c1 = c1.Offset(1, 4)
                 c2 = c2.Offset(1, 4)
@@ -125,11 +159,11 @@ class BatchExporter():
             
 
 
-def main(ipv4, reactor_name, rsize, batch_name='test1'):
+def main(ipv4, reactor_name, rsize, batch_name='test1', version=3):
 
     print("Beginning export...")
     try:
-        BatchExporter(ipv4, reactor_name, rsize).export(batch_name)
+        BatchExporter(ipv4, reactor_name, rsize, version).export(batch_name)
     except:
         print("Error")
         raise
@@ -171,7 +205,13 @@ def outer_main():
     if ipv4 is None:
         main2(ipv4, reactor_name, rsize, fn, batch_name)
     else:
-        main(ipv4, reactor_name, rsize, batch_name)
+        version = input("Enter Hello Version (2 or 3): ")
+        if not version:
+            version = 3
+        if version not in ('2', '3'):
+            raise ValueError(version)
+        version = int(version)
+        main(ipv4, reactor_name, rsize, batch_name, version)
 
 if __name__ == '__main__':
     while True:
