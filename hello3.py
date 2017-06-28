@@ -480,10 +480,17 @@ class HelloApp(BaseHelloApp):
         url = "/webservice/getReport/?&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
                 (mode, type, val1, val2, timeout)
         rsp = self._send_request_raw(url)
+
+        # getreport uses a different webserver
+        # and chen used a different json message structure
+        # ??? so we have to check for errors manually
         data = json_loads(rsp.read().decode())
         message = data['message']
         if not message:
-            raise ServerCallError(data['error'])
+            err = data['error']
+            if err.startswith("No user associated"):
+                raise NotLoggedInError(err)
+            raise ServerCallError(err)
         return message
 
     def getBatches(self):
