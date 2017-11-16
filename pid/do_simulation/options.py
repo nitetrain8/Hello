@@ -1,7 +1,7 @@
 import json
 from pysrc.snippets.option import OptionCategory
 from hello.pid.delay import minutes, hours, days
-from hello.pid.do_simulation.doprocess import AIR_CNO
+from hello.pid.do_simulation.doprocess import AIR_CNO, DOProcess
 
 class PIDOps(OptionCategory):
     p = 5
@@ -28,6 +28,9 @@ class PlotOps(OptionCategory):
     xmin = 0
     xmax = 72
     xscale_factor = 3600
+
+class MicroProcessOps(OptionCategory): pass
+
 
 class SimOps(OptionCategory):
     
@@ -63,24 +66,37 @@ class SimOps(OptionCategory):
     plots.xmax = 72
     plots.xscale_factor = 3600
     
-    delay = 0
     end = 10000
-    initial_actual_cno = AIR_CNO
     initial_request_cno = (0.00, 0, 0)
     initial_pv = 90
     set_point = 40
     set_point_deadband = 1
-    k_mult = 1.1
-    k = None
-    c = None
-    dc = 0
-    d2c = 0
     mode = "o2a"
-    main_gas = 1.0
-    reactor_size = 80
-    reactor_volume = 55
     time_unit = hours
     max_iters = 3 * days
+
+    Process = DOProcess
+
+    # Used by DOProcess (headspace)
+    main_gas = 1.0
+    initial_actual_cno = AIR_CNO
+    reactor_size = 80
+    volume = 55
+    delay = 0
+    k_mult = 1.1   # Not used by Micro Process!!!
+    k = None       # Not used by Micro Process!!!
+    c = 0
+    dc = 0
+    d2c = 0
+
+    # Used by DOProcessMicro, but not by DOProcess
+    km_hs = 1  # Separate multiplier for headspace
+    km_ms = 1  # Separate multiplier for microsparger
+    m1 = 4.403227
+    m2 = 0.500656
+    m3 = 0.111072
+    b  = 0.445392
+
 
 class SimConfig(OptionCategory):
     simops = SimOps()

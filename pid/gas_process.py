@@ -94,6 +94,27 @@ class HeadspaceProcess():
         o2 += 0.2095 * air
         air = 1 - (co2+n2+o2)
         return co2, n2, o2, air
+
+
+class MicroProcess():
+    # Unsure if microsparger process model will ever need
+    # to be complex enough to require a class encapsulation
+    # (e.g. bubble size simulation etc). This class will be
+    # mostly empty until then (??)
+    def __init__(self, volume):
+        self.vol = volume
+
+    def step(self, main_gas, o2_req):
+        return o2_req*main_gas
+
+
+class GasControllerMicro():
+    def __init__(self, co2mfcmax, n2mfcmax, o2mfcmax, airmfcmax):
+        self.cm = co2mfcmax
+        self.nm = n2mfcmax
+        self.om = o2mfcmax
+        self.am = airmfcmax
+        self.mg_max = max((self.cm, self.nm, self.om, self.am))
             
 
 class GasController():

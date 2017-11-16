@@ -263,8 +263,8 @@ class BaseHelloApp(_hello._BaseHelloApp):
         while True:
             try:
                 return self._connection.do_request('GET', url, None, self.headers)
-            except (ConnectionError, HTTPException, socket.timeout, TimeoutError):
-                pass
+            except (ConnectionError, HTTPException, socket.timeout, TimeoutError) as e:
+                err = e
             except Exception as e: 
                 # debug. eventually all connection quirks should be worked out
                 # and handled appropriately.

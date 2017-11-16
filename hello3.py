@@ -41,6 +41,8 @@ class HelloError(BadError):
     """ Problem with Hello app class. """
     pass
 
+class BadConnection(HelloError, ConnectionError, HTTPException, TimeoutError):
+    pass
 
 class ServerCallError(HelloError):
     pass
@@ -165,7 +167,7 @@ class BaseHelloApp(_hello._BaseHelloApp):
     headers = {}
     ConnectionFactory = HTTPSSession
 
-    def __init__(self, ipv4, headers=None, retry_count=3, timeout=5, verbose_errors=False, logger=None):
+    def __init__(self, ipv4, headers=None, timeout=5, verbose_errors=False, logger=None):
         """
         @param ipv4: ipv4 address to connect to (string eg 192.168.1.1:80)
         @param headers: headers to pass on each http connection
@@ -176,7 +178,6 @@ class BaseHelloApp(_hello._BaseHelloApp):
         self.headers = self.headers.copy()
         self.headers.update(headers or {})
         self._urlbase = "/webservice/interface/"
-        self.retry_count = retry_count
         self.verbose_errors = verbose_errors
 
         self._ipv4 = ipv4
@@ -208,28 +209,8 @@ class BaseHelloApp(_hello._BaseHelloApp):
         return self._ipv4
 
     def _do_request(self, url):
-        if self.retry_count > -1:
-            it = range(self.retry_count + 1)
-        else:
-            it = itertools.count(0)  # forever
-        for _ in it:
-            try:
-                return self._connection.do_request('GET', url, None, self.headers)
-            except (ConnectionError, HTTPException, TimeoutError) as e:
-                err = e
-                self.reconnect()
-            except Exception as e:
-                err = e
-                if self.verbose_errors:
-                    msg = "%s(%s)" % (err.__class__.__name__, ", ".join(str(a) for a in err.args))
-                    self._logger.warning("=====================================")
-                    self._logger.warning("ERROR OCCURRED DURING REQUEST")
-                    self._logger.warning("IP ADDRESS: %s", self._ipv4)
-                    self._logger.warning("REQUESTED URL: <%s>", url)
-                    self._logger.warning("MESSAGE: %s", msg)
-                    self._logger.warning("=====================================")
-                self.reconnect()
-        raise err
+        # Requests package handles retries
+        return self._connection.do_request('GET', url, None, self.headers)
 
     def _send_request_raw(self, url):
         """
@@ -332,70 +313,70 @@ def _retry_on_auth_fail(func):
     return wrapper
 
 
-class HelloAPI(BaseHelloApp):
-    def login(self, user, pwd):
-        return self.call_validate('login', val1=user, val2=pwd, json=True)
+# class HelloAPI(BaseHelloApp):
+#     def login(self, user, pwd):
+#         return self.call_validate('login', val1=user, val2=pwd, json=True)
 
-    def logout(self):
-        return self.call_validate('logout', json=True)
+#     def logout(self):
+#         return self.call_validate('logout', json=True)
 
-    def startbatch(self, name):
-        return self.call_validate('setStartBatch', val1=name)
+#     def startbatch(self, name):
+#         return self.call_validate('setStartBatch', val1=name)
 
-    def endbatch(self):
-        return self.call_validate('setendbatch')
+#     def endbatch(self):
+#         return self.call_validate('setendbatch')
 
-    def getAlarms(self, mode, nalarms, id):
-        return self.call_validate('getAlarms', mode=mode, val1=nalarms, val2=id)
+#     def getAlarms(self, mode, nalarms, id):
+#         return self.call_validate('getAlarms', mode=mode, val1=nalarms, val2=id)
 
-    def getAlarmList(self):
-        return self.call_validate('getAlarmList')
+#     def getAlarmList(self):
+#         return self.call_validate('getAlarmList')
 
-    def getUnAckCount(self):
-        return self.call_validate('getUnAckCount')
+#     def getUnAckCount(self):
+#         return self.call_validate('getUnAckCount')
 
-    def getReport(self, mode, type, val1, val2, timeout):
-        # Thanks, Chen!
-        url = "/webservice/getReport/?&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
-                (mode, type, val1, val2, timeout)
-        rsp = self._send_request_raw(url)
-        return self._validate_rsp(rsp, False)
+#     def getReport(self, mode, type, val1, val2, timeout):
+#         # Thanks, Chen!
+#         url = "/webservice/getReport/?&mode=%s&type=%s&val1=%s&val2=%s&timeout=%s" % \
+#                 (mode, type, val1, val2, timeout)
+#         rsp = self._send_request_raw(url)
+#         return self._validate_rsp(rsp, False)
 
-    def getBatches(self):
-        return self.call_validate('getBatches')
+#     def getBatches(self):
+#         return self.call_validate('getBatches')
 
-    def getfile(self, filename):
-        # Thanks, Chen! (I didn't do this)
-        url = "/webservice/getfile/?&getfile=" + filename
-        rsp = self._send_request_raw(url)
-        return rsp.read()
+#     def getfile(self, filename):
+#         # Thanks, Chen! (I didn't do this)
+#         url = "/webservice/getfile/?&getfile=" + filename
+#         rsp = self._send_request_raw(url)
+#         return rsp.read()
 
-    def set(self, group, mode, val1, val2):
-        if val2 is None:
-            return self.call_validate('set', group=group, mode=mode, val1=val1)
-        else:
-            return self.call_validate('set', group=group, mode=mode, val1=val1, val2=val2)
+#     def set(self, group, mode, val1, val2):
+#         if val2 is None:
+#             return self.call_validate('set', group=group, mode=mode, val1=val1)
+#         else:
+#             return self.call_validate('set', group=group, mode=mode, val1=val1, val2=val2)
 
-    def getDORAValues(self):
-        return self.call_validate('getDORAValues')
+#     def getDORAValues(self):
+#         return self.call_validate('getDORAValues')
 
-    def getMainValues(self):
-        return self.call_validate('getMainValues', json=True)
+#     def getMainValues(self):
+#         return self.call_validate('getMainValues', json=True)
 
-    def setconfig(self, group, name, val):
-        return self.call_validate('setconfig', group=group, name=name, val=val)
+#     def setconfig(self, group, name, val):
+#         return self.call_validate('setconfig', group=group, name=name, val=val)
 
-    def setpumpa(self, mode, val):
-        return self.call_validate('setpumpa', val1=mode, val2=val)
+#     def setpumpa(self, mode, val):
+#         return self.call_validate('setpumpa', val1=mode, val2=val)
 
-    def setpumpb(self, mode, val):
-        return self.call_validate('setpumpb', val1=mode, val2=val)
+#     def setpumpb(self, mode, val):
+#         return self.call_validate('setpumpb', val1=mode, val2=val)
 
-    def setpumpc(self, mode, val):
-        return self.call_validate('setpumpc', val1=mode, val2=val)
+#     def setpumpc(self, mode, val):
+#         return self.call_validate('setpumpc', val1=mode, val2=val)
 
-    def setpumpsample(self, mode, val):
-        return self.call_validate('setpumpsample', val1=mode, val2=val)
+#     def setpumpsample(self, mode, val):
+#         return self.call_validate('setpumpsample', val1=mode, val2=val)
 
 
 def lowercase_methods(cls):
@@ -412,8 +393,8 @@ def lowercase_methods(cls):
 @lowercase_methods
 class HelloApp(BaseHelloApp):
 
-    def __init__(self, ipv4, headers=None, retry_count=3, timeout=socket.getdefaulttimeout(), verbose_errors=False):
-        super().__init__(ipv4, headers, retry_count, timeout, verbose_errors)
+    def __init__(self, ipv4, headers=None, timeout=socket.getdefaulttimeout(), verbose_errors=False):
+        super().__init__(ipv4, headers, timeout, verbose_errors)
         self._user = ""
         self._password = ""
 
@@ -642,7 +623,7 @@ class HelloApp(BaseHelloApp):
         @param val2: value returend by getRawValue()
         @param target2: pv that val1 actually corresponds to (value entered by user)
         """
-        if val2 or target2:
+        if val2 and target2:
             # two point cal
             query = "?&call=trycal&sensor=%s&val1=%s&target1=%s&val2=%s&target2=%s" % (sensor, val1, target1,
                                                                                        val2, target2)
@@ -653,9 +634,45 @@ class HelloApp(BaseHelloApp):
         rsp = self.send_request(query)
         return self._validate_rsp(rsp, False)
 
+    def savetrialcal(self, sensor):
+        query = "?&call=savetrialcal&sensor="+sensor
+        return self._validate_rsp(self.send_request(query), False)
+
     def getRawValue(self, sensor):
-        query = "?&call=getRawValue&sensor=" + sensor
-        rsp = self.send_request(query)
+        """ This response can truebug under unknown 
+        circumstances. In addition, requesting this reply as JSON
+        has the odd effect of returning just a string containing
+        the raw value as a float if the call is successful,
+        and JSON if the call is not. This is actually convenient
+        if incredibly sloppy. 
+        """
+
+        query = "?&call=getRawValue&json=True&sensor=" + sensor
+        tries = 0
+        max = 30
+        while True:
+            rsp = self.send_request(query)
+            s = rsp.content.decode()
+            if not s: 
+                continue
+            try:
+                return float(s)
+            except ValueError:
+                # call failed, probably due to not logged in
+                j = json_loads(s)
+                m = j['message']
+                if m.startswith("No user associated"):
+                    raise NotLoggedInError(m) from None
+                elif m.lower() == 'true':
+                    # truebug
+                    pass
+                else:
+                    raise ServerCallError(m) from None
+            tries += 1
+            if tries > max:
+                raise ServerCallError(m)
+
+
         xml = HelloXML(rsp)
         if not xml.result:
             raise ServerCallError(xml.data)

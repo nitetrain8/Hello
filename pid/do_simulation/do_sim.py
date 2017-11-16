@@ -25,9 +25,9 @@ def _setpid(ob, state, name, value):
     elif name == "man":
         pid.man_request = int(value)
     else:
-        print("WARNING: Invalid attribute for %r: %r" % (ob, name, name == "man"))
+        print("WARNING: Invalid attribute for %r: %r" % (ob, name))
 
-def _update_value(ops, state, proc, ob, name, value):
+def _update_value(state, proc, ob, name, value):
     if ob == "process":
         if name == "delay":
             value *= 60
@@ -81,16 +81,19 @@ def do_sim_coroutine(ops, state, xq, pvq, cq,
     o2_pid = _mk_pid(ops.o2_pid, pv, sp-db, o2_req*100, mode)
     n2_pid = _mk_pid(ops.n2_pid, pv, sp+db, n2_req*100, mode)
     
-    delay = ops.delay
     mg = ops.main_gas
-    co2a, n2a, o2a = ops.initial_actual_cno
+
+    proc = ops.Process()
+    proc.apply_ops(ops)
+
+    # Old process initiation code
+    # proc = DOProcess(mg, (co2a, n2a, o2a), 
+    #                  ops.reactor_size, ops.reactor_volume, 
+    #                  delay)
     
-    proc = DOProcess(mg, pv,     (co2a, n2a, o2a), 
-                     ops.reactor_size, ops.reactor_volume, 
-                     delay)
+    # proc.set_values(k=ops.k, k_mult=ops.k_mult, c=ops.c, dc=ops.dc, d2c=ops.d2c)
     
-    proc.set_values(k=ops.k, k_mult=ops.k_mult, c=ops.c, dc=ops.dc, d2c=ops.d2c)
-        
+
     ctrl = GasController(ops.mfcs.co2_max, ops.mfcs.n2_max, ops.mfcs.o2_max, ops.mfcs.air_max)
     
     t = 0
@@ -103,10 +106,7 @@ def do_sim_coroutine(ops, state, xq, pvq, cq,
         cmd, arg = yield msg
         msg = None
         
-        state['c'] = proc.c * 3600
-        state['dc'] = proc.dc * 3600 * 3600
-        state['d2c'] = proc.d2c * 3600 * 3600 * 3600
-        state['k'] = proc.k
+        state.update(proc.getstate())
         state['sp'] = sp
         state['db'] = db
         state['pv'] = pv
@@ -121,7 +121,7 @@ def do_sim_coroutine(ops, state, xq, pvq, cq,
 
         if cmd == "SIM_ITERS":
             
-            iters = arg
+            iters = int(arg)
             if iters < 0:
                 continue
             elif iters > mi:
@@ -166,7 +166,7 @@ def do_sim_coroutine(ops, state, xq, pvq, cq,
             t = arg
         elif cmd == "UPDATE_VALUE":
             ob, name, value = arg
-            rsp = _update_value(ops, state, proc, ob, name, value)
+            _update_value(state, proc, ob, name, value)
         elif cmd == "MODIFY_STATE":
             name, value = arg
             if name == "sp":

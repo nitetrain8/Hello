@@ -17,8 +17,10 @@ import sys
 import datetime
 from scripts import wlan
 import requests
+import socket
+from time import sleep
 
-_func_test_folder = "\\\\PBSStation\\PBSCloudShare\\(4) Manufacturing & Operations\\Functional Testing"
+_func_test_folder = 'C:\\PBSCloudStation\\(4) Manufacturing & Operations\\Functional Testing'
 _backup_folder = os.path.join(os.path.abspath(os.path.expanduser("~")), "Documents", "PBS", "Local Functional Testing")
 
 def swap_wifi(nw):
@@ -26,19 +28,40 @@ def swap_wifi(nw):
     wlan.ensure_wifi(nw)
 
 class BatchExporter():
-    def __init__(self, ipv4, reactor_name, rsize, version=3):
+    def __init__(self, ipv4, reactor_name, rsize, version=3, folder=None):
         self.ipv4 = ipv4
         self.reactor_name = reactor_name
         self.rsize = rsize
+        self.current_network = wlan.get_current_wifi()
+        self.folder = folder or reactor_name 
+
         if ipv4:
             print("Connecting to ", ipv4, "...")
             if version == 2:
-                self.app = hello.HelloApp(ipv4)
+                kls = hello.HelloApp
             else:
-                self.app = hello3.HelloApp(ipv4)
+                kls = hello3.HelloApp
+
+            try:
+                self.app = kls(ipv4, timeout=60)
+            except (requests.exceptions.ConnectTimeout, OSError):
+                if self.current_network == "PBSBIOTECH":
+                    nw = "pbstech"
+                else:
+                    nw = "PBSBIOTECH"
+                print("Bioreactor not found! Checking other network...")
+                
+                # When switching networks, the new network isn't actually available
+                # for a few seconds after `ensure_wifi` has enabled it. 
+                # Properly doing this would infinite loop as long as an OSError
+                # thrown was due to 'unreachable network', but it is easier
+                # to just sleep and cross fingers. 
+
+                swap_wifi(nw)
+                sleep(10)
+                self.app = kls(ipv4, timeout=60)
         else:
             self.app = None
-        self.current_network = wlan.get_current_wifi()
 
     def _temp_unique_name(self, batch_name):
         i = ""
@@ -48,7 +71,7 @@ class BatchExporter():
             folder = _func_test_folder
         else:
             folder = _backup_folder
-        path = os.path.join(folder, self.rsize, self.reactor_name)
+        path = os.path.join(folder, self.rsize, self.folder)
         os.makedirs(path, exist_ok=True)
         while True:
             fname = os.path.join(path, "%s%s%s" % (batch_name, i, ".csv"))
@@ -59,7 +82,6 @@ class BatchExporter():
         return path, fname
 
     def _save_temp(self, batch_name, report):
-        swap_wifi("PBSBIOTECH")
         path, fname = self._temp_unique_name(batch_name)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -73,20 +95,7 @@ class BatchExporter():
 
     def login(self):
         print("Attempting to login...")
-        self.app.settimeout(5)
-        self.app.retry_count = 2
-        try:
-            self.app.login('pbstech', '727246')
-        except requests.exceptions.ConnectTimeout:
-            if self.current_network == "PBSBIOTECH":
-                nw = "pbstech"
-            else:
-                nw = "PBSBIOTECH"
-            print("Bioreactor not found! Checking other network...")
-            swap_wifi(nw)
-            self.app.login('pbstech', '727246')
-        self.app.settimeout(30)
-        self.app.retry_count = 3
+        self.app.login('pbstech', '727246')
 
     def export(self, batch_name):
         if not self.app:
@@ -129,21 +138,21 @@ class BatchExporter():
                 v3 = c3.Value
                 if v1 is None:
                     if v2 is not None: 
-                        fail()
+                        failed = True
                     else:
                         break
                 else:
                     if not isinstance(v1, datetime.datetime):
                         if (c1.Offset(0, 1).Value != "Batch Name") or (c2.Offset(0, 1).Value != "Created By"):
-                            fail()
+                            failed = True
                     else:
                         try:
                             float(v2)
                         except Exception:
-                            fail()
+                            failed = True
                 if v3 is not None: 
                     if (c1.Offset(0, 1).Value != "Batch Name") or (c2.Offset(0, 1).Value != "Created By"):
-                        fail()
+                        failed = True
                     else:
                         break
 
@@ -157,23 +166,30 @@ class BatchExporter():
             else:
                 print("Data Column Assert: SUCCESS")
             
+            # this type of sloppy duplication of folder path determination 
+            # nonsense is what happens when I have to fix 
+            # old code programmed by some dumbass ((aka me))
+            fn = "%s Batch Export %s.xlsx" % (self.reactor_name, datetime.datetime.now().strftime("%y%m%d"))
+            folder = _func_test_folder if os.path.exists(_func_test_folder) else _backup_folder
+            fp = os.path.join(folder, self.rsize, self.folder, fn)
+            wb.SaveAs(fp, FileFormat=officelib.const.xlOpenXMLWorkbook)
+        
 
-
-def main(ipv4, reactor_name, rsize, batch_name='test1', version=3):
+def main(ipv4, reactor_name, rsize, batch_name='test1', version=3, folder=None):
 
     print("Beginning export...")
     try:
-        BatchExporter(ipv4, reactor_name, rsize, version).export(batch_name)
+        BatchExporter(ipv4, reactor_name, rsize, version, folder).export(batch_name)
     except:
         print("Error")
         raise
     else:
         print("Export Successful")
         
-def main2(ipv4, reactor_name, rsize, filename, batch_name='test1'):
+def main2(ipv4, reactor_name, rsize, filename, batch_name='test1', folder=None):
     print("Beginning export...")
     try:
-        b = BatchExporter(ipv4, reactor_name, rsize)
+        b = BatchExporter(ipv4, reactor_name, rsize, 3, folder)
         with open(filename, 'rb') as f:
             report = f.read()
         b.analyze(batch_name, report)
@@ -182,10 +198,6 @@ def main2(ipv4, reactor_name, rsize, filename, batch_name='test1'):
         raise
     else:
         print("Export Successful")
-
-
-def test():
-    main("192.168.1.124", "PBS 3 Demo XIX", "3L")
 
 def outer_main():
         # test()
@@ -197,21 +209,21 @@ def outer_main():
         if not fn:
             raise ValueError(fn)
             
-    reactor_name = input("Enter reactor name: ")
-    rsize = input("Enter reactor size: ")
-    batch_name = input("Enter Batch Name: ")
-    batch_name = batch_name or "test1"
+    reactor_name = input("Enter reactor name: ")     or "Bioreactor"
+    folder = input("Enter folder name: ")            or reactor_name
+    rsize = input("Enter reactor size (3L): ")       or "3L"
+    batch_name = input("Enter Batch Name (test1): ") or "test1"
    
     if ipv4 is None:
-        main2(ipv4, reactor_name, rsize, fn, batch_name)
+        main2(ipv4, reactor_name, rsize, fn, batch_name, folder)
     else:
-        version = input("Enter Hello Version (2 or 3): ")
+        version = input("Enter Hello Version (3): ")
         if not version:
-            version = 3
+            version = '3'
         if version not in ('2', '3'):
             raise ValueError(version)
         version = int(version)
-        main(ipv4, reactor_name, rsize, batch_name, version)
+        main(ipv4, reactor_name, rsize, batch_name, version, folder)
 
 if __name__ == '__main__':
     while True:
