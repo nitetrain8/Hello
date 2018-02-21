@@ -59,7 +59,7 @@ def print_keys(copy=True, silent=True):
         clipboard.copy(s)
     if not silent:
         print(s)
-        return s
+    return s
 
 from hello.hello3 import open_hello, NotLoggedInError, HelloError
 from pysrc.snippets import unique_name
