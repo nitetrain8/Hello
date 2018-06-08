@@ -54,6 +54,8 @@ class PIDController():
             self.off_to_auto(pv, sp)
         elif self._mode == self.MAN and m == self.AUTO:
             self.man_to_auto(pv, sp, self.man_request)
+        elif m == self.MAN:
+            self.man_request = sp
         self._mode = m
         
     @property
