@@ -449,6 +449,11 @@ class HelloApp(BaseHelloApp):
             raise ServerCallError(xml.msg)
         return int(xml.data)
 
+    def runrecipe(self, name):
+        query = "?&call=runRecipe&recipe=%s" % name.replace(" ", "_")
+        rsp = self.send_request(query)
+        return self._validate_rsp(rsp, False)
+
     def getReport(self, mode, type, val1, val2='', timeout=120000):
         """
         @param mode: 'byBatch' or 'byDate'
