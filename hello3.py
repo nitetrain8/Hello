@@ -1032,6 +1032,8 @@ class BatchListXML(HelloXML):
         name = val['ID']
         ns[name] = val
 
+    def __repr__(self):
+        return "<%s.%s object: [%s]>" % (self.__module__, self.__class__.__name__, ",".join(self.names_to_batches))
 
 def __test2():
     b = HelloApp('192.168.1.6').getBatches()
