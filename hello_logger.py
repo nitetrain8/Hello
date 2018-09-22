@@ -1,3 +1,10 @@
+import clipboard
+from hello.hello3 import open_hello, NotLoggedInError, HelloError
+from pysrc.snippets import unique_name
+from time import sleep, time
+from datetime import datetime
+import threading
+
 _gmv_keys = [
     'temperature.output', 
     'temperature.man', 
@@ -52,7 +59,6 @@ _gmv_keys = [
     'level.pv'
 ]
 
-import clipboard
 def print_keys(copy=True, silent=True):
     s = "keys = " + "[" + "\n    " + ",\n    ".join(repr(k) for k in _gmv_keys) + "\n]"
     if copy:
@@ -61,11 +67,6 @@ def print_keys(copy=True, silent=True):
         print(s)
     return s
 
-from hello.hello3 import open_hello, NotLoggedInError, HelloError
-from pysrc.snippets import unique_name
-from time import sleep, time
-from datetime import datetime
-import threading
 
 def now(t):
     return datetime.fromtimestamp(t).strftime("%m/%d/%y %I:%M:%S %p")
@@ -271,8 +272,6 @@ class HelloLogger():
             self.write_to_file()
             self._f.close()
             self._f = None
-
-import traceback
 
 class Task():
     def __init__(self, fn, interval):
