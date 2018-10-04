@@ -87,7 +87,6 @@ def _join(*args):
 class _HLProtocol():
     def __init__(self, ip, wl):
         self._h = open_hello(ip)
-        self._whitelist = None
         self._buf = []
         self._used_keys = ()
         self._st = time()
@@ -110,7 +109,6 @@ class _HLProtocol():
                 raise ValueError("%r is an invalid key" % k) from None
             keys.append((k1, k2))
         self._used_keys = tuple(keys)
-        self._whitelist = seen
         self._write_key_update()
 
     def _list_wl_from_wl(self):

@@ -296,23 +296,6 @@ class BaseHelloApp(_hello._BaseHelloApp):
             return ServerCallError(message)
 
 
-def _retry_on_auth_fail(func):
-    def wrapper(self, *args, **kw):
-        err = None
-        try:
-            rv = func(self, *args, **kw)
-        except NotLoggedInError as e:
-            err = e
-        else:
-            return rv
-        if self._user and self._password:
-            self.login(self._user, self._password)
-            return func(self, *args, **kw)
-        else:
-            raise err
-    return wrapper
-
-
 # class HelloAPI(BaseHelloApp):
 #     def login(self, user, pwd):
 #         return self.call_validate('login', val1=user, val2=pwd, json=True)
