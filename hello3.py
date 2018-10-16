@@ -969,6 +969,9 @@ class BatchListXML(HelloXML):
     def getbatches(self):
         return list(self.ids_to_batches.values())
 
+    def __iter__(self):
+        return iter(self.ids_to_batches.values())
+
     def __getitem__(self, v):
         return self.get(v)
 

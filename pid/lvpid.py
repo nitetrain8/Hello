@@ -57,6 +57,9 @@ class PIDController():
         elif m == self.MAN:
             self.man_request = sp
         self._mode = m
+
+    def off_mode(self):
+        self.set_mode(self.OFF, 0, 0)
         
     @property
     def itime(self):
