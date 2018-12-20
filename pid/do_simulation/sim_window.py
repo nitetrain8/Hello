@@ -1,4 +1,4 @@
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -62,7 +62,7 @@ class DOSimWindow():
         self.canvas.show()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
-        self.toolbar = NavigationToolbar2TkAgg(self.canvas, self.root)
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self.root)
         self.toolbar.update()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         
