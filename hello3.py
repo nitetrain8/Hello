@@ -144,6 +144,7 @@ class HTTPSSession():
         # For public access (api compatibility)
         self.host = host
         self.port = port
+
     def do_request(self, meth, url, body=None, headers=None):
         url = self._base + url
         rsp = self.sess.request(meth, url, body, None, timeout=self.timeout, verify=False)
@@ -151,8 +152,10 @@ class HTTPSSession():
         file = io.BytesIO(rsp.content)
         rsp.read = file.read
         return rsp
+
     def connect(self):
         self.sess = requests.Session()
+        
     def close(self):
         self.sess = requests.Session()
 
